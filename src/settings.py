@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
     @property
     def pg_config(self):
@@ -21,6 +22,16 @@ class Settings:
             },
         }
         return db_config
+
+    @property
+    def nebula_config(self):
+        return {
+            "host": os.getenv("NEBULA_HOST"),
+            "port": os.getenv("NEBULA_PORT"),
+            "user": os.getenv("NEBULA_USERNAME"),
+            "password": os.getenv("NEBULA_PASSWORD"),
+            "space": os.getenv("NEBULA_SPACE"),
+        }
 
 
 settings = Settings()

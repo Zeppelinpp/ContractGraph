@@ -9,6 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "nebula3-python>=3.8.3",
     "psycopg2>=2.9.11",
     "python-dotenv>=1.2.1",
     "tqdm>=4.67.1",

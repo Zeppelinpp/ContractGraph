@@ -1,0 +1,11 @@
+﻿edge_id,edge_type,from_node,to_node,from_type,to_type,properties
+CASE_C_0001,RELATED_TO,CON_001,CASE_001,Contract,LegalEvent,关联合同-建材采购合同-华信建材有限公司
+CASE_C_0002,RELATED_TO,CON_002,CASE_002,Contract,LegalEvent,关联合同-建材采购合同-东方钢铁集团
+CASE_C_0003,RELATED_TO,CON_003,CASE_003,Contract,LegalEvent,关联合同-建材采购合同-盛达水泥制造
+CASE_C_0004,RELATED_TO,CON_004,CASE_004,Contract,LegalEvent,关联合同-建材采购合同-鑫源建筑材料
+CASE_C_0005,RELATED_TO,CON_005,CASE_005,Contract,LegalEvent,关联合同-建材采购合同-宏图机械设备
+CASE_C_0006,RELATED_TO,CON_006,CASE_006,Contract,LegalEvent,关联合同-建材采购合同-天成电气设备
+CASE_C_0007,RELATED_TO,CON_007,CASE_007,Contract,LegalEvent,关联合同-建材采购合同-瑞丰五金制品
+CASE_C_0008,RELATED_TO,CON_008,CASE_008,Contract,LegalEvent,关联合同-建材采购合同-博达工程机械
+CASE_C_0009,RELATED_TO,CON_009,CASE_009,Contract,LegalEvent,关联合同-建材采购合同-金石建材供应
+CASE_C_0010,RELATED_TO,CON_010,CASE_010,Contract,LegalEvent,关联合同-建材采购合同-永盛钢构工程

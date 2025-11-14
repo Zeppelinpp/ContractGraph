@@ -6,12 +6,21 @@ load_dotenv()
 class Settings:
     @property
     def pg_config(self):
-        return {
-            "host": os.getenv("PG_HOST"),
-            "port": os.getenv("PG_PORT"),
-            "user": os.getenv("PG_USER"),
-            "password": os.getenv("PG_PASSWORD"),
+        db_config = {
+            "remote": {
+                "host": os.getenv("PG_REMOTE_HOST"),
+                "port": os.getenv("PG_REMOTE_PORT"),
+                "user": os.getenv("PG_REMOTE_USER"),
+                "password": os.getenv("PG_REMOTE_PASSWORD"),
+            },
+            "local": {
+                "host": os.getenv("PG_LOCAL_HOST"),
+                "port": os.getenv("PG_LOCAL_PORT"),
+                "user": os.getenv("PG_LOCAL_USER"),
+                "password": os.getenv("PG_LOCAL_PASSWORD"),
+            },
         }
+        return db_config
 
 
 settings = Settings()

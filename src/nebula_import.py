@@ -14,21 +14,16 @@ from typing import Iterable, List, Dict
 
 from nebula3.Config import Config
 from nebula3.gclient.net import ConnectionPool
+from src.settings import settings
 
 # ============================================================================
 # 基础配置
 # ============================================================================
-NEBULA_ADDRESS = os.getenv("NEBULA_ADDRESS", "172.18.53.63:9669")
-NEBULA_USERNAME = os.getenv("NEBULA_USERNAME", "root")
-NEBULA_PASSWORD = os.getenv("NEBULA_PASSWORD", "nebula")
-NEBULA_SPACE = os.getenv("NEBULA_SPACE", "contract_1117")
-
-if ":" in NEBULA_ADDRESS:
-    NEBULA_HOST, NEBULA_PORT = NEBULA_ADDRESS.split(":")
-    NEBULA_PORT = int(NEBULA_PORT)
-else:
-    NEBULA_HOST = NEBULA_ADDRESS
-    NEBULA_PORT = 9669
+NEBULA_HOST = settings.nebula_config["host"]
+NEBULA_PORT = settings.nebula_config["port"]
+NEBULA_USERNAME = settings.nebula_config["user"]
+NEBULA_PASSWORD = settings.nebula_config["password"]
+NEBULA_SPACE = settings.nebula_config["space"]
 
 GRAPH_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "graph_data")
 
@@ -395,7 +390,7 @@ def main():
     print("=" * 80)
     print("Nebula Graph 数据导入工具")
     print("=" * 80)
-    print(f"地址: {NEBULA_ADDRESS}")
+    print(f"地址: {NEBULA_HOST}:{NEBULA_PORT}")
     print(f"图空间: {NEBULA_SPACE}")
     print(f"数据目录: {GRAPH_DATA_DIR}")
 

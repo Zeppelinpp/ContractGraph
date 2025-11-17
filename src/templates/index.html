@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>央企穿透式监督知识图谱 Demo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 央企穿透式监督知识图谱</h1>
+            <p>交互式风险监测与循环交易检测平台</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('legal-events')">
+                ⚖️ 法律事件监测
+            </button>
+            <button class="tab-btn" onclick="switchTab('circular-trades')">
+                🔄 循环交易检测
+            </button>
+        </div>
+
+        <!-- 法律事件监测模块 -->
+        <div id="legal-events-tab" class="tab-content active">
+            <div class="section">
+                <h2>法律事件风险传导分析</h2>
+                <p class="description">追踪法律事件对企业及其关联方的影响路径</p>
+                
+                <div class="controls">
+                    <button onclick="loadLegalEventPersons()" class="btn btn-primary">
+                        📋 加载涉及法律事件的人员
+                    </button>
+                    <span id="legal-status" class="status"></span>
+                </div>
+
+                <div class="content-grid">
+                    <div class="panel">
+                        <h3>人员列表</h3>
+                        <div id="persons-list" class="list-container"></div>
+                    </div>
+
+                    <div class="panel">
+                        <h3>风险传导路径</h3>
+                        <div id="risk-paths" class="paths-container"></div>
+                    </div>
+                </div>
+
+                <div class="graph-panel">
+                    <h3>关系图谱可视化</h3>
+                    <div class="graph-controls">
+                        <button onclick="zoomIn()" class="btn btn-sm">🔍 放大</button>
+                        <button onclick="zoomOut()" class="btn btn-sm">🔍 缩小</button>
+                        <button onclick="resetView()" class="btn btn-sm">↺ 重置</button>
+                    </div>
+                    <svg id="legal-graph" width="100%" height="600"></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- 循环交易检测模块 -->
+        <div id="circular-trades-tab" class="tab-content">
+            <div class="section">
+                <h2>循环交易模式检测</h2>
+                <p class="description">检测企业间的循环交易模式，识别可疑交易闭环</p>
+                
+                <div class="controls">
+                    <label>
+                        相似度阈值:
+                        <input type="range" id="similarity-threshold" min="80" max="100" value="90" 
+                               oninput="document.getElementById('threshold-value').textContent = this.value + '%'">
+                        <span id="threshold-value">90%</span>
+                    </label>
+                    <button onclick="detectCircularTrades()" class="btn btn-primary">
+                        🔍 开始检测
+                    </button>
+                    <span id="circular-status" class="status"></span>
+                </div>
+
+                <div class="content-grid">
+                    <div class="panel">
+                        <h3>检测结果</h3>
+                        <div id="cycles-list" class="list-container"></div>
+                    </div>
+
+                    <div class="panel">
+                        <h3>循环详情</h3>
+                        <div id="cycle-details" class="paths-container"></div>
+                    </div>
+                </div>
+
+                <div class="graph-panel">
+                    <h3>循环交易可视化</h3>
+                    <div class="graph-controls">
+                        <button onclick="zoomInCircular()" class="btn btn-sm">🔍 放大</button>
+                        <button onclick="zoomOutCircular()" class="btn btn-sm">🔍 缩小</button>
+                        <button onclick="resetViewCircular()" class="btn btn-sm">↺ 重置</button>
+                    </div>
+                    <svg id="circular-graph" width="100%" height="600"></svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+

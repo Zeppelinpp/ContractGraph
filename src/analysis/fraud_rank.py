@@ -5,12 +5,11 @@
 """
 
 import os
-import csv
 import pandas as pd
 from collections import defaultdict
+from nebula_utils import get_nebula_session, execute_query
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
-GRAPH_DIR = os.path.join(BASE_DIR, "data", "graph_data")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 
 # 边权重设计（基于业务逻辑）
@@ -65,9 +64,9 @@ def calculate_init_score(company_id, legal_events):
     return min(score, 1.0)
 
 
-def load_weighted_graph(graph_data_dir):
+def load_weighted_graph(session):
     """
-    从 CSV 文件加载图数据并构建加权邻接表
+    从 Nebula Graph 加载图数据并构建加权邻接表
     
     Returns:
         dict: {
@@ -82,90 +81,194 @@ def load_weighted_graph(graph_data_dir):
         'out_degree': defaultdict(int)
     }
     
-    # 读取所有边文件
-    edge_files = {
-        'edges_controls.csv': 'CONTROLS',
-        'edges_legal_person.csv': 'LEGAL_PERSON',
-        'edges_company_transaction.csv': None,  # 需要解析边类型
-        'edges_trades_with.csv': 'TRADES_WITH',
-        'edges_is_supplier.csv': 'IS_SUPPLIER',
-        'edges_is_customer.csv': 'IS_CUSTOMER',
-        'edges_party.csv': None,  # 需要解析边类型
-    }
+    # 查询所有公司节点
+    company_query = """
+    MATCH (c:Company)
+    RETURN id(c) as company_id
+    """
+    companies = execute_query(session, company_query)
+    for row in companies:
+        company_id = row.get('company_id', '')
+        if company_id:
+            graph['nodes'].add(company_id)
     
-    for filename, edge_type in edge_files.items():
-        filepath = os.path.join(graph_data_dir, filename)
-        if not os.path.exists(filepath):
-            continue
-            
-        with open(filepath, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                from_node = row['from_node']
-                to_node = row['to_node']
-                
-                # 解析实际边类型
-                if filename in ['edges_company_transaction.csv', 'edges_party.csv']:
-                    edge_type = row['edge_type']
-                
-                weight = EDGE_WEIGHTS.get(edge_type, 0.3)
-                
-                graph['nodes'].add(from_node)
-                graph['nodes'].add(to_node)
-                graph['edges'][from_node].append((to_node, weight))
-                graph['out_degree'][from_node] += 1
+    # 查询 CONTROLS 边
+    controls_query = """
+    MATCH (c1:Company)-[:CONTROLS]->(c2:Company)
+    RETURN id(c1) as from_node, id(c2) as to_node
+    """
+    rows = execute_query(session, controls_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('CONTROLS', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 LEGAL_PERSON 边（Person -> Company）
+    legal_person_query = """
+    MATCH (p:Person)-[:LEGAL_PERSON]->(c:Company)
+    RETURN id(p) as from_node, id(c) as to_node
+    """
+    rows = execute_query(session, legal_person_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('LEGAL_PERSON', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 TRADES_WITH 边
+    trades_query = """
+    MATCH (c1:Company)-[:TRADES_WITH]->(c2:Company)
+    RETURN id(c1) as from_node, id(c2) as to_node
+    """
+    rows = execute_query(session, trades_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('TRADES_WITH', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 IS_SUPPLIER 边
+    supplier_query = """
+    MATCH (c1:Company)-[:IS_SUPPLIER]->(c2:Company)
+    RETURN id(c1) as from_node, id(c2) as to_node
+    """
+    rows = execute_query(session, supplier_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('IS_SUPPLIER', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 IS_CUSTOMER 边
+    customer_query = """
+    MATCH (c1:Company)-[:IS_CUSTOMER]->(c2:Company)
+    RETURN id(c1) as from_node, id(c2) as to_node
+    """
+    rows = execute_query(session, customer_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('IS_CUSTOMER', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 PAYS 边（Company -> Transaction）
+    pays_query = """
+    MATCH (c:Company)-[:PAYS]->(t:Transaction)
+    RETURN id(c) as from_node, id(t) as to_node
+    """
+    rows = execute_query(session, pays_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('PAYS', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 RECEIVES 边（Transaction -> Company）
+    receives_query = """
+    MATCH (t:Transaction)-[:RECEIVES]->(c:Company)
+    RETURN id(t) as from_node, id(c) as to_node
+    """
+    rows = execute_query(session, receives_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get('RECEIVES', 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
+    
+    # 查询 PARTY_A 和 PARTY_B 边（Company -> Contract）
+    party_query = """
+    MATCH (c:Company)-[e:PARTY_A|PARTY_B]->(con:Contract)
+    RETURN id(c) as from_node, id(con) as to_node, type(e) as edge_type
+    """
+    rows = execute_query(session, party_query)
+    for row in rows:
+        from_node = row.get('from_node', '')
+        to_node = row.get('to_node', '')
+        edge_type = row.get('edge_type', '')
+        if from_node and to_node:
+            weight = EDGE_WEIGHTS.get(edge_type, 0.3)
+            graph['nodes'].add(from_node)
+            graph['nodes'].add(to_node)
+            graph['edges'][from_node].append((to_node, weight))
+            graph['out_degree'][from_node] += 1
     
     return graph
 
 
-def initialize_risk_seeds(graph_data_dir):
+def initialize_risk_seeds(session):
     """
     从法律事件数据初始化风险种子
     """
     init_scores = defaultdict(float)
     
-    # 从案件-合同关系推导公司风险
-    edges_case_contract = os.path.join(graph_data_dir, 'edges_case_contract.csv')
-    edges_dispute_contract = os.path.join(graph_data_dir, 'edges_dispute_contract.csv')
-    edges_party = os.path.join(graph_data_dir, 'edges_party.csv')
-    nodes_legal_event = os.path.join(graph_data_dir, 'nodes_legal_event.csv')
+    # 查询合同关联的法律事件
+    contract_event_query = """
+    MATCH (con:Contract)-[:RELATED_TO]->(le:LegalEvent)
+    RETURN id(con) as contract_id, id(le) as event_id,
+           le.LegalEvent.event_type as event_type,
+           le.LegalEvent.amount as amount,
+           le.LegalEvent.status as status
+    """
+    contract_events = execute_query(session, contract_event_query)
     
-    # 加载法律事件信息
-    legal_events = {}
-    with open(nodes_legal_event, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            legal_events[row['node_id']] = {
-                'event_type': row['event_type'],
-                'amount': float(row['amount']) if row['amount'] else 0,
-                'status': row['status']
-            }
+    # 查询合同的公司关系（甲方/乙方）
+    contract_companies_query = """
+    MATCH (c:Company)-[:PARTY_A|PARTY_B]->(con:Contract)
+    RETURN id(con) as contract_id, id(c) as company_id
+    """
+    contract_companies = execute_query(session, contract_companies_query)
     
-    # 合同 -> 法律事件映射
-    contract_to_event = {}
-    if os.path.exists(edges_case_contract):
-        with open(edges_case_contract, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                contract_to_event[row['from_node']] = row['to_node']
-    
-    if os.path.exists(edges_dispute_contract):
-        with open(edges_dispute_contract, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                contract_to_event[row['from_node']] = row['to_node']
-    
-    # 合同 -> 公司映射（甲方/乙方）
+    # 构建合同 -> 公司映射
     contract_to_companies = defaultdict(list)
-    with open(edges_party, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            contract_to_companies[row['to_node']].append(row['from_node'])
+    for row in contract_companies:
+        contract_id = row.get('contract_id', '')
+        company_id = row.get('company_id', '')
+        if contract_id and company_id:
+            contract_to_companies[contract_id].append(company_id)
     
     # 计算初始分数
-    for contract_id, event_id in contract_to_event.items():
-        if event_id in legal_events:
-            event = legal_events[event_id]
+    for row in contract_events:
+        contract_id = row.get('contract_id', '')
+        event_id = row.get('event_id', '')
+        event_type = row.get('event_type', '')
+        amount = float(row.get('amount', 0) or 0)
+        status = row.get('status', '')
+        
+        if contract_id and event_id:
+            event = {
+                'event_type': event_type,
+                'amount': amount,
+                'status': status
+            }
             base_score = calculate_init_score(None, [event])
             
             # 将风险分配给该合同的甲乙方
@@ -234,15 +337,29 @@ def get_risk_level(score):
         return '正常'
 
 
-def analyze_fraud_rank_results(fraud_scores, graph_data_dir, top_n=50):
+def analyze_fraud_rank_results(fraud_scores, session, top_n=50):
     """
     分析 FraudRank 结果并生成报告
     """
-    # 加载公司信息
-    companies_df = pd.read_csv(
-        os.path.join(graph_data_dir, 'nodes_company.csv')
-    )
-    company_info = companies_df.set_index('node_id').to_dict('index')
+    # 查询公司信息
+    company_query = """
+    MATCH (c:Company)
+    RETURN id(c) as company_id, c.Company.name as name,
+           c.Company.legal_person as legal_person,
+           c.Company.credit_code as credit_code
+    """
+    companies = execute_query(session, company_query)
+    
+    # 构建公司信息字典
+    company_info = {}
+    for row in companies:
+        company_id = row.get('company_id', '')
+        if company_id:
+            company_info[company_id] = {
+                'name': row.get('name', 'Unknown'),
+                'legal_person': row.get('legal_person', 'N/A'),
+                'credit_code': row.get('credit_code', 'N/A')
+            }
     
     # 按分数排序
     sorted_scores = sorted(
@@ -254,8 +371,9 @@ def analyze_fraud_rank_results(fraud_scores, graph_data_dir, top_n=50):
     # 生成报告
     report = []
     for node_id, score in sorted_scores[:top_n]:
-        if node_id.startswith('ORG_') or node_id.startswith('SUP_') or node_id.startswith('CUS_') or node_id.startswith('CP_') or node_id.startswith('SHELL_') or node_id.startswith('COLL_'):
-            info = company_info.get(node_id, {})
+        # 只处理公司节点
+        if node_id in company_info:
+            info = company_info[node_id]
             report.append({
                 '公司ID': node_id,
                 '公司名称': info.get('name', 'Unknown'),
@@ -281,38 +399,46 @@ def main():
     print("FraudRank 欺诈风险传导分析")
     print("=" * 60)
     
-    # Step 1: 加载图数据
-    print("\n[1/4] 加载图数据...")
-    graph = load_weighted_graph(GRAPH_DIR)
-    print(f"  节点数: {len(graph['nodes'])}")
-    print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
+    session = None
+    try:
+        session = get_nebula_session()
+        
+        # Step 1: 加载图数据
+        print("\n[1/4] 加载图数据...")
+        graph = load_weighted_graph(session)
+        print(f"  节点数: {len(graph['nodes'])}")
+        print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
+        
+        # Step 2: 初始化风险种子
+        print("\n[2/4] 初始化风险种子节点...")
+        init_scores = initialize_risk_seeds(session)
+        seed_count = sum(1 for s in init_scores.values() if s > 0)
+        print(f"  风险种子节点数: {seed_count}")
+        if seed_count > 0:
+            print(f"  平均初始分数: {sum(init_scores.values()) / seed_count:.4f}")
+        
+        # Step 3: 计算 FraudRank
+        print("\n[3/4] 计算 FraudRank（迭代中...）")
+        fraud_scores = compute_fraud_rank(graph, init_scores, damping=0.85)
+        
+        # Step 4: 生成分析报告
+        print("\n[4/4] 生成分析报告...")
+        report = analyze_fraud_rank_results(fraud_scores, session, top_n=50)
+        
+        print("\n" + "=" * 60)
+        print("分析完成！")
+        print("=" * 60)
+        
+        if len(report) > 0:
+            print(f"\n前 10 高风险公司：\n")
+            print(report.head(10).to_string(index=False))
+            print(f"\n完整报告已保存至: reports/fraud_rank_report.csv")
+        else:
+            print("\n未发现高风险公司")
     
-    # Step 2: 初始化风险种子
-    print("\n[2/4] 初始化风险种子节点...")
-    init_scores = initialize_risk_seeds(GRAPH_DIR)
-    seed_count = sum(1 for s in init_scores.values() if s > 0)
-    print(f"  风险种子节点数: {seed_count}")
-    if seed_count > 0:
-        print(f"  平均初始分数: {sum(init_scores.values()) / seed_count:.4f}")
-    
-    # Step 3: 计算 FraudRank
-    print("\n[3/4] 计算 FraudRank（迭代中...）")
-    fraud_scores = compute_fraud_rank(graph, init_scores, damping=0.85)
-    
-    # Step 4: 生成分析报告
-    print("\n[4/4] 生成分析报告...")
-    report = analyze_fraud_rank_results(fraud_scores, GRAPH_DIR, top_n=50)
-    
-    print("\n" + "=" * 60)
-    print("分析完成！")
-    print("=" * 60)
-    
-    if len(report) > 0:
-        print(f"\n前 10 高风险公司：\n")
-        print(report.head(10).to_string(index=False))
-        print(f"\n完整报告已保存至: reports/fraud_rank_report.csv")
-    else:
-        print("\n未发现高风险公司")
+    finally:
+        if session:
+            session.release()
 
 
 if __name__ == '__main__':

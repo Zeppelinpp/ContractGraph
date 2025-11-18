@@ -332,8 +332,13 @@ def create_tag_indexes(session):
                 if result.row_size() > 0:
                     for i in range(result.row_size()):
                         row = result.row_values(i)
-                        if len(row.values) > 0:
-                            existing_indexes.add(str(row.values[0]))
+                        # 兼容不同版本的返回值：可能是list或Row对象
+                        if isinstance(row, list):
+                            if len(row) > 0:
+                                existing_indexes.add(str(row[0]))
+                        else:
+                            if hasattr(row, 'values') and len(row.values) > 0:
+                                existing_indexes.add(str(row.values[0]))
                 
                 missing = [name for name in index_names if name not in existing_indexes]
                 if not missing:

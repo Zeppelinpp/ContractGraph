@@ -1,4 +1,4 @@
-﻿edge_id,edge_type,from_node,to_node,from_type,to_type,properties
+edge_id,edge_type,from_node,to_node,from_type,to_type,properties
 PARTY_0001,PARTY_A,ORG_002,CON_001,Company,Contract,甲方-中建华东分公司
 PARTY_0002,PARTY_B,SUP_001,CON_001,Company,Contract,乙方-华信建材有限公司
 PARTY_0003,PARTY_A,ORG_002,CON_002,Company,Contract,甲方-中建华东分公司
@@ -199,3 +199,21 @@ PARTY_0197,PARTY_A,CUS_030,CON_099,Company,Contract,甲方-当代置业
 PARTY_0198,PARTY_B,SUP_022,CON_099,Company,Contract,乙方-腾飞机械设备
 PARTY_0199,PARTY_A,ORG_011,CON_100,Company,Contract,甲方-中石油华南销售公司
 PARTY_0200,PARTY_B,CP_009,CON_100,Company,Contract,乙方-工程保险代理
+PARTY_0201,PARTY_A,ORG_002,CON_0101,Company,Contract,甲方-中建华东分公司
+PARTY_0202,PARTY_B,COLL_095,CON_0101,Company,Contract,乙方-串通公司1-刘杰
+PARTY_0203,PARTY_A,ORG_002,CON_0102,Company,Contract,甲方-中建华东分公司
+PARTY_0204,PARTY_B,COLL_096,CON_0102,Company,Contract,乙方-串通公司2-刘杰
+PARTY_0205,PARTY_A,ORG_002,CON_0103,Company,Contract,甲方-中建华东分公司
+PARTY_0206,PARTY_B,COLL_097,CON_0103,Company,Contract,乙方-串通公司3-刘杰
+PARTY_0207,PARTY_A,ORG_002,CON_0104,Company,Contract,甲方-中建华东分公司
+PARTY_0208,PARTY_B,COLL_095,CON_0104,Company,Contract,乙方-串通公司1-刘杰
+PARTY_0209,PARTY_A,ORG_002,CON_0105,Company,Contract,甲方-中建华东分公司
+PARTY_0210,PARTY_B,COLL_096,CON_0105,Company,Contract,乙方-串通公司2-刘杰
+PARTY_0211,PARTY_A,ORG_002,CON_0106,Company,Contract,甲方-中建华东分公司
+PARTY_0212,PARTY_B,COLL_097,CON_0106,Company,Contract,乙方-串通公司3-刘杰
+PARTY_0213,PARTY_A,ORG_002,CON_0107,Company,Contract,甲方-中建华东分公司
+PARTY_0214,PARTY_B,COLL_095,CON_0107,Company,Contract,乙方-串通公司1-刘杰
+PARTY_0215,PARTY_A,ORG_002,CON_0108,Company,Contract,甲方-中建华东分公司
+PARTY_0216,PARTY_B,COLL_096,CON_0108,Company,Contract,乙方-串通公司2-刘杰
+PARTY_0217,PARTY_A,ORG_002,CON_0109,Company,Contract,甲方-中建华东分公司
+PARTY_0218,PARTY_B,COLL_097,CON_0109,Company,Contract,乙方-串通公司3-刘杰

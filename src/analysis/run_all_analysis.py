@@ -23,38 +23,39 @@ from analysis.collusion import main as collusion_main
 
 def main():
     start_time = datetime.now()
-    
+
     print("\n" + "=" * 80)
     print("知识图谱高级分析套件")
     print(f"开始时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
-    
+
     analyses = [
         ("FraudRank 欺诈风险传导分析", fraud_rank_main),
         ("高级循环交易检测", circular_trade_main),
         ("空壳公司网络识别", shell_company_main),
         ("关联方串通网络分析", collusion_main),
     ]
-    
+
     results = {}
-    
+
     for name, func in analyses:
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"正在执行: {name}")
-        print('='*80)
-        
+        print("=" * 80)
+
         try:
             func()
             results[name] = "✓ 成功"
         except Exception as e:
             print(f"\n错误: {str(e)}")
             import traceback
+
             traceback.print_exc()
             results[name] = f"✗ 失败: {str(e)}"
-    
+
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
-    
+
     # 生成总结报告
     print("\n" + "=" * 80)
     print("分析完成总结")
@@ -68,6 +69,5 @@ def main():
     print("=" * 80 + "\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

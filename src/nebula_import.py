@@ -123,7 +123,9 @@ def create_space_and_schema(session):
         f"CREATE SPACE IF NOT EXISTS {NEBULA_SPACE} "
         "(vid_type = FIXED_STRING(64));",
     )
-    time.sleep(1)
+    # 等待空间创建完成，新创建的空间需要更多时间
+    print("  等待图空间创建完成...")
+    time.sleep(3)
     execute(session, f"USE {NEBULA_SPACE};")
 
     execute(
@@ -210,6 +212,168 @@ def create_space_and_schema(session):
         )
 
     wait_for_schema_ready(session)
+
+
+# ============================================================================
+# 索引创建
+# ============================================================================
+def create_tag_indexes(session):
+    """为所有 Tag 的属性创建索引。"""
+    print("\n=== 创建节点属性索引 ===")
+    execute(session, f"USE {NEBULA_SPACE};")
+    
+    # Person Tag 索引
+    person_indexes = [
+        ("person_name", "Person", "name"),
+        ("person_number", "Person", "number"),
+        ("person_id_card", "Person", "id_card"),
+        ("person_gender", "Person", "gender"),
+        ("person_birthday", "Person", "birthday"),
+        ("person_status", "Person", "status"),
+    ]
+    
+    # Company Tag 索引
+    company_indexes = [
+        ("company_name", "Company", "name"),
+        ("company_number", "Company", "number"),
+        ("company_legal_person", "Company", "legal_person"),
+        ("company_credit_code", "Company", "credit_code"),
+        ("company_establish_date", "Company", "establish_date"),
+        ("company_status", "Company", "status"),
+        ("company_description", "Company", "description"),
+    ]
+    
+    # Contract Tag 索引
+    contract_indexes = [
+        ("contract_contract_no", "Contract", "contract_no"),
+        ("contract_contract_name", "Contract", "contract_name"),
+        ("contract_amount", "Contract", "amount"),
+        ("contract_sign_date", "Contract", "sign_date"),
+        ("contract_status", "Contract", "status"),
+        ("contract_description", "Contract", "description"),
+    ]
+    
+    # LegalEvent Tag 索引
+    legal_event_indexes = [
+        ("legal_event_event_type", "LegalEvent", "event_type"),
+        ("legal_event_event_no", "LegalEvent", "event_no"),
+        ("legal_event_event_name", "LegalEvent", "event_name"),
+        ("legal_event_amount", "LegalEvent", "amount"),
+        ("legal_event_status", "LegalEvent", "status"),
+        ("legal_event_register_date", "LegalEvent", "register_date"),
+        ("legal_event_description", "LegalEvent", "description"),
+    ]
+    
+    # Transaction Tag 索引
+    transaction_indexes = [
+        ("transaction_transaction_type", "Transaction", "transaction_type"),
+        ("transaction_transaction_no", "Transaction", "transaction_no"),
+        ("transaction_contract_no", "Transaction", "contract_no"),
+        ("transaction_amount", "Transaction", "amount"),
+        ("transaction_transaction_date", "Transaction", "transaction_date"),
+        ("transaction_status", "Transaction", "status"),
+        ("transaction_description", "Transaction", "description"),
+    ]
+    
+    all_indexes = (
+        person_indexes
+        + company_indexes
+        + contract_indexes
+        + legal_event_indexes
+        + transaction_indexes
+    )
+    
+    # 字符串属性的索引长度（字节），考虑中文字符使用 128
+    string_props = {
+        "name", "number", "id_card", "gender", "birthday", "status",
+        "legal_person", "credit_code", "establish_date", "description",
+        "contract_no", "contract_name", "sign_date",
+        "event_type", "event_no", "event_name", "register_date",
+        "transaction_type", "transaction_no", "transaction_date",
+    }
+    
+    # double 类型的属性不需要指定长度
+    double_props = {"amount"}
+    
+    for index_name, tag_name, prop_name in all_indexes:
+        if prop_name in string_props:
+            query = (
+                f"CREATE TAG INDEX IF NOT EXISTS {index_name} "
+                f"ON {tag_name}({prop_name}(128));"
+            )
+        elif prop_name in double_props:
+            query = (
+                f"CREATE TAG INDEX IF NOT EXISTS {index_name} "
+                f"ON {tag_name}({prop_name});"
+            )
+        else:
+            query = (
+                f"CREATE TAG INDEX IF NOT EXISTS {index_name} "
+                f"ON {tag_name}({prop_name}(128));"
+            )
+        
+        try:
+            execute(session, query)
+            print(f"  创建索引: {index_name}")
+        except RuntimeError as e:
+            print(f"  ! 创建索引失败 {index_name}: {e}")
+    
+    # 等待索引创建完成
+    print("\n等待索引创建完成...")
+    time.sleep(2)
+    
+    # 检查索引是否存在，等待所有索引创建完成
+    def wait_for_indexes_ready(index_names, retries: int = 10, interval: float = 1.0):
+        """等待所有索引创建完成。"""
+        for _ in range(retries):
+            try:
+                result = execute(session, "SHOW TAG INDEXES;")
+                existing_indexes = set()
+                if result.row_size() > 0:
+                    for i in range(result.row_size()):
+                        row = result.row_values(i)
+                        if len(row.values) > 0:
+                            existing_indexes.add(str(row.values[0]))
+                
+                missing = [name for name in index_names if name not in existing_indexes]
+                if not missing:
+                    return True
+            except RuntimeError:
+                pass
+            time.sleep(interval)
+        return False
+    
+    index_names = [name for name, _, _ in all_indexes]
+    if wait_for_indexes_ready(index_names):
+        print("  所有索引创建完成")
+    else:
+        print("  警告: 部分索引可能尚未创建完成")
+    
+    # 重建所有索引（仅重建已存在的索引）
+    print("\n=== 重建索引 ===")
+    for index_name, _, _ in all_indexes:
+        try:
+            execute(session, f"REBUILD TAG INDEX {index_name};")
+            print(f"  重建索引: {index_name}")
+        except RuntimeError as e:
+            # 如果索引不存在，跳过重建（可能是新创建的索引，不需要重建）
+            if "not found" not in str(e).lower():
+                print(f"  ! 重建索引失败 {index_name}: {e}")
+    
+    # 等待索引重建完成
+    print("\n等待索引重建完成...")
+    time.sleep(3)
+    
+    # 检查索引状态
+    try:
+        result = execute(session, "SHOW TAG INDEX STATUS;")
+        print("  索引状态:")
+        if result.row_size() > 0:
+            for i in range(result.row_size()):
+                row = result.row_values(i)
+                print(f"    {row}")
+    except RuntimeError:
+        pass
 
 
 # ============================================================================
@@ -400,6 +564,7 @@ def main():
 
     try:
         create_space_and_schema(session)
+        create_tag_indexes(session)
         import_nodes(session)
         import_edges(session)
         print("\n全部导入完成。")

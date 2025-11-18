@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import json
 from collections import defaultdict, Counter
-from nebula_utils import get_nebula_session, execute_query
+from src.utils.nebula_utils import get_nebula_session, execute_query
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")

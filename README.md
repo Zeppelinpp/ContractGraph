@@ -30,12 +30,39 @@ NEBULA_PASSWORD=nebula
 NEBULA_SPACE=contract_1117
 ```
 
-### 3. 导入数据
+### 3. 生成并导入数据
+
+#### 方式一：使用一键脚本（推荐）
 
 ```bash
-# 导入数据到 Nebula Graph
-uv run python src/nebula_import.py
+# 导入增强数据（包含更多业务场景）
+bash src/scripts/import_enhanced_data.sh
+
+# 或导入原始数据
+bash src/scripts/import_graph_data.sh
 ```
+
+#### 方式二：分步执行
+
+```bash
+# 步骤 1: 生成图数据
+# 从 enhanced_mock_data 生成（推荐）
+uv run python src/scripts/generate_enhanced_graph_data.py
+
+# 或从 mock_data 生成
+uv run python src/scripts/generate_graph_data.py
+
+# 步骤 2: 导入到 Nebula Graph
+# 导入 enhanced_graph_data
+uv run python src/scripts/nebula_import.py --data-dir enhanced_graph_data
+
+# 或导入 graph_data（默认）
+uv run python src/scripts/nebula_import.py
+```
+
+**数据目录说明**：
+- `mock_data` → `graph_data` - 原始测试数据
+- `enhanced_mock_data` → `enhanced_graph_data` - 增强业务数据（推荐）
 
 ### 4. 运行分析
 
@@ -58,6 +85,23 @@ uv run python src/analysis/collusion.py
 - `shell_company_detection_report.csv` - 空壳公司识别报告
 - `collusion_network_report.csv` - 串通网络分析报告
 
+### 6. 数据管理
+
+查看可用的数据脚本：
+
+```bash
+# 生成图数据
+src/scripts/generate_graph_data.py           # 从 mock_data 生成
+src/scripts/generate_enhanced_graph_data.py  # 从 enhanced_mock_data 生成
+
+# 导入数据
+src/scripts/nebula_import.py                 # 通用导入脚本（支持 --data-dir 参数）
+
+# 一键脚本
+src/scripts/import_graph_data.sh             # 生成+导入 graph_data
+src/scripts/import_enhanced_data.sh          # 生成+导入 enhanced_graph_data
+```
+
 ## 项目结构
 
 ```
@@ -69,20 +113,27 @@ contract-graph/
 │   │   ├── shell_company.py          # 空壳公司识别
 │   │   ├── collusion.py              # 串通网络分析
 │   │   └── run_all_analysis.py       # 运行所有分析
-│   ├── scripts/                       # 数据生成脚本
-│   │   ├── analyze_scenario_support.py      # 场景支持分析
-│   │   └── generate_advanced_scenario_data.py # 生成增强数据
-│   ├── nebula_import.py              # Nebula Graph 导入
+│   ├── scripts/                       # 数据处理脚本
+│   │   ├── generate_graph_data.py              # 生成图数据（从 mock_data）
+│   │   ├── generate_enhanced_graph_data.py     # 生成图数据（从 enhanced_mock_data）
+│   │   ├── nebula_import.py                    # Nebula Graph 导入（支持配置）
+│   │   ├── import_graph_data.sh                # 一键导入 graph_data
+│   │   ├── import_enhanced_data.sh             # 一键导入 enhanced_graph_data
+│   │   ├── analyze_scenario_support.py         # 场景支持分析
+│   │   └── generate_advanced_scenario_data.py  # 生成增强场景数据
 │   ├── settings.py                   # 配置管理
 │   └── web_demo.py                   # Web 演示
 ├── data/
-│   ├── graph_data/                   # CSV 图数据
-│   └── mock_data/                    # 原始 mock 数据
+│   ├── mock_data/                    # 原始 mock 数据
+│   ├── graph_data/                   # 从 mock_data 生成的图数据
+│   ├── enhanced_mock_data/           # 增强 mock 数据
+│   └── enhanced_graph_data/          # 从 enhanced_mock_data 生成的图数据
 ├── reports/                          # 分析报告输出目录
 ├── docs/                             # 文档
 │   ├── 知识图谱高级分析场景实施方案.md
 │   ├── 高级分析场景使用说明.md
 │   ├── 场景数据支持分析报告.md
+│   ├── enhanced_data_import_guide.md  # 增强数据导入指南
 │   └── graph_schema.md
 └── tests/                            # 测试用例
 ```
@@ -224,6 +275,7 @@ NETWORK_1: 9家公司
 - [知识图谱高级分析场景实施方案](docs/知识图谱高级分析场景实施方案.md) - 详细算法原理和实施步骤
 - [高级分析场景使用说明](docs/高级分析场景使用说明.md) - 使用指南和参数调整
 - [场景数据支持分析报告](docs/场景数据支持分析报告.md) - 数据支持情况分析
+- [增强数据导入指南](docs/enhanced_data_import_guide.md) - enhanced_mock_data 导入详细说明
 - [图谱 Schema 设计](docs/graph_schema.md) - 完整的图谱结构设计
 
 ## 性能指标

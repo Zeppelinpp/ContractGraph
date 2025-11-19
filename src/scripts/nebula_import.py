@@ -5,11 +5,23 @@ Nebula Graph data importer.
 运行前确保：
   pip install nebula3-python
   graph_data 目录与本脚本位于同一层级
+
+使用方式：
+  # 使用默认 graph_data 目录
+  python nebula_import.py
+  
+  # 使用指定数据目录
+  python nebula_import.py --data-dir /path/to/your/graph_data
+  
+  # 使用 enhanced_graph_data
+  python nebula_import.py --data-dir enhanced_graph_data
 """
 
+import argparse
 import csv
 import os
 import time
+from pathlib import Path
 from typing import Iterable, List, Dict
 
 from nebula3.Config import Config
@@ -25,7 +37,9 @@ NEBULA_USERNAME = settings.nebula_config["user"]
 NEBULA_PASSWORD = settings.nebula_config["password"]
 NEBULA_SPACE = settings.nebula_config["space"]
 
-GRAPH_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "graph_data")
+# 默认数据目录
+DEFAULT_GRAPH_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "graph_data")
+GRAPH_DATA_DIR = DEFAULT_GRAPH_DATA_DIR
 
 # 需要预先创建的边类型
 EDGE_TYPES = [
@@ -555,7 +569,62 @@ def import_edges(session):
 # ============================================================================
 # 主流程
 # ============================================================================
+def set_data_directory(data_dir: str):
+    """Set the graph data directory."""
+    global GRAPH_DATA_DIR
+    
+    # Handle relative paths
+    if not os.path.isabs(data_dir):
+        # Try relative to project root first
+        base_dir = Path(__file__).resolve().parents[2]
+        data_path = base_dir / "data" / data_dir
+        if data_path.exists():
+            GRAPH_DATA_DIR = str(data_path)
+        else:
+            # Try as direct relative path
+            abs_path = os.path.abspath(data_dir)
+            if os.path.exists(abs_path):
+                GRAPH_DATA_DIR = abs_path
+            else:
+                raise FileNotFoundError(f"Data directory not found: {data_dir}")
+    else:
+        if os.path.exists(data_dir):
+            GRAPH_DATA_DIR = data_dir
+        else:
+            raise FileNotFoundError(f"Data directory not found: {data_dir}")
+    
+    print(f"Using data directory: {GRAPH_DATA_DIR}")
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Import graph data into Nebula Graph",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use default graph_data directory
+  python nebula_import.py
+  
+  # Use enhanced_graph_data directory
+  python nebula_import.py --data-dir enhanced_graph_data
+  
+  # Use absolute path
+  python nebula_import.py --data-dir /path/to/your/graph_data
+        """
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Path to graph data directory (relative to project data/ or absolute path)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Set data directory if specified
+    if args.data_dir:
+        set_data_directory(args.data_dir)
+    
     print("=" * 80)
     print("Nebula Graph 数据导入工具")
     print("=" * 80)

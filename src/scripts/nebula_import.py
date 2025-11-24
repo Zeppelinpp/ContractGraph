@@ -151,10 +151,25 @@ def create_space_and_schema(session):
             id_card string,
             gender string,
             birthday string,
-            status string
+            status string,
+            email string,
+            phone string
         );
         """,
     )
+    
+    # Update existing Person tag if it doesn't have new fields
+    try:
+        execute(session, "ALTER TAG Person ADD (email string);")
+        print("  更新 Person tag: 添加 email 字段")
+    except RuntimeError:
+        pass  # Field may already exist
+    
+    try:
+        execute(session, "ALTER TAG Person ADD (phone string);")
+        print("  更新 Person tag: 添加 phone 字段")
+    except RuntimeError:
+        pass  # Field may already exist
 
     execute(
         session,
@@ -210,10 +225,39 @@ def create_space_and_schema(session):
             amount double,
             transaction_date string,
             status string,
-            description string
+            description string,
+            fpaidamount double,
+            ftotalamount double,
+            fbiztimeend string,
+            fperformstatus string
         );
         """,
     )
+    
+    # Update existing Transaction tag if it doesn't have new fields
+    try:
+        execute(session, "ALTER TAG Transaction ADD (fpaidamount double);")
+        print("  更新 Transaction tag: 添加 fpaidamount 字段")
+    except RuntimeError:
+        pass
+    
+    try:
+        execute(session, "ALTER TAG Transaction ADD (ftotalamount double);")
+        print("  更新 Transaction tag: 添加 ftotalamount 字段")
+    except RuntimeError:
+        pass
+    
+    try:
+        execute(session, "ALTER TAG Transaction ADD (fbiztimeend string);")
+        print("  更新 Transaction tag: 添加 fbiztimeend 字段")
+    except RuntimeError:
+        pass
+    
+    try:
+        execute(session, "ALTER TAG Transaction ADD (fperformstatus string);")
+        print("  更新 Transaction tag: 添加 fperformstatus 字段")
+    except RuntimeError:
+        pass
 
     for edge_type in EDGE_TYPES:
         execute(
@@ -244,6 +288,8 @@ def create_tag_indexes(session):
         ("person_gender", "Person", "gender"),
         ("person_birthday", "Person", "birthday"),
         ("person_status", "Person", "status"),
+        ("person_email", "Person", "email"),
+        ("person_phone", "Person", "phone"),
     ]
     
     # Company Tag 索引
@@ -287,6 +333,10 @@ def create_tag_indexes(session):
         ("transaction_transaction_date", "Transaction", "transaction_date"),
         ("transaction_status", "Transaction", "status"),
         ("transaction_description", "Transaction", "description"),
+        ("transaction_fpaidamount", "Transaction", "fpaidamount"),
+        ("transaction_ftotalamount", "Transaction", "ftotalamount"),
+        ("transaction_fbiztimeend", "Transaction", "fbiztimeend"),
+        ("transaction_fperformstatus", "Transaction", "fperformstatus"),
     ]
     
     all_indexes = (
@@ -300,14 +350,16 @@ def create_tag_indexes(session):
     # 字符串属性的索引长度（字节），考虑中文字符使用 128
     string_props = {
         "name", "number", "id_card", "gender", "birthday", "status",
+        "email", "phone",
         "legal_person", "credit_code", "establish_date", "description",
         "contract_no", "contract_name", "sign_date",
         "event_type", "event_no", "event_name", "register_date",
         "transaction_type", "transaction_no", "transaction_date",
+        "fbiztimeend", "fperformstatus",
     }
     
     # double 类型的属性不需要指定长度
-    double_props = {"amount"}
+    double_props = {"amount", "fpaidamount", "ftotalamount"}
     
     for index_name, tag_name, prop_name in all_indexes:
         if prop_name in string_props:
@@ -405,14 +457,16 @@ def import_person_nodes(session):
     count = 0
     for row in rows:
         query = (
-            "INSERT VERTEX Person(name, number, id_card, gender, birthday, status) "
+            "INSERT VERTEX Person(name, number, id_card, gender, birthday, status, email, phone) "
             f"VALUES \"{escape(row.get('node_id'))}\": ("
             f"\"{escape(row.get('name'))}\", "
             f"\"{escape(row.get('number'))}\", "
             f"\"{escape(row.get('id_card'))}\", "
             f"\"{escape(row.get('gender'))}\", "
             f"\"{escape(row.get('birthday'))}\", "
-            f"\"{escape(row.get('status'))}\");"
+            f"\"{escape(row.get('status'))}\", "
+            f"\"{escape(row.get('email', ''))}\", "
+            f"\"{escape(row.get('phone', ''))}\");"
         )
         execute(session, query)
         count += 1
@@ -501,10 +555,14 @@ def import_transaction_nodes(session):
     count = 0
     for row in rows:
         amount = parse_float(row.get("amount"))
+        # Support both field names: fpaidamount and fpaidallamount
+        fpaidamount = parse_float(row.get("fpaidamount") or row.get("fpaidallamount") or "0")
+        ftotalamount = parse_float(row.get("ftotalamount", "0"))
         query = (
             "INSERT VERTEX Transaction("
             "transaction_type, transaction_no, contract_no, amount, "
-            "transaction_date, status, description) "
+            "transaction_date, status, description, "
+            "fpaidamount, ftotalamount, fbiztimeend, fperformstatus) "
             f"VALUES \"{escape(row.get('node_id'))}\": ("
             f"\"{escape(row.get('transaction_type'))}\", "
             f"\"{escape(row.get('transaction_no'))}\", "
@@ -512,7 +570,11 @@ def import_transaction_nodes(session):
             f"{amount}, "
             f"\"{escape(row.get('transaction_date'))}\", "
             f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('description'))}\");"
+            f"\"{escape(row.get('description'))}\", "
+            f"{fpaidamount}, "
+            f"{ftotalamount}, "
+            f"\"{escape(row.get('fbiztimeend', ''))}\", "
+            f"\"{escape(row.get('fperformstatus', ''))}\");"
         )
         execute(session, query)
         count += 1

@@ -4,7 +4,9 @@ import os
 import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+from pathlib import Path
 from src.settings import settings
+from src.scripts.generate_enhanced_graph_data import EnhancedGraphDataGenerator
 
 
 class DataPipeline:
@@ -108,6 +110,63 @@ class DataPipeline:
 
         return results
 
+    def generate_graph_data(self, local_dir: str, graph_dir: str):
+        """
+        Generate graph data CSV files from local_data directory.
+        
+        Args:
+            local_dir: Directory containing local_data CSV files
+            graph_dir: Output directory for graph data CSV files
+        """
+        local_path = Path(local_dir)
+        graph_path = Path(graph_dir)
+        
+        if not local_path.exists():
+            raise FileNotFoundError(f"Local data directory not found: {local_dir}")
+        
+        graph_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create a temporary enhanced_mock_data structure from local_data
+        # by creating symlinks or copying files with expected names
+        temp_mock_dir = local_path.parent / "temp_mock_data"
+        temp_mock_dir.mkdir(exist_ok=True)
+        
+        # Map local_data files to expected mock_data names
+        file_mapping = {
+            "t_sec_user.csv": "t_sec_user_虚拟数据.csv",
+            "t_org_org.csv": "t_org_org_虚拟数据.csv",
+            "t_bd_supplier.csv": "t_bd_supplier_虚拟数据.csv",
+            "t_bd_customer.csv": "t_bd_customer_虚拟数据.csv",
+            "t_mscon_counterpart.csv": "t_mscon_counterpart_虚拟数据.csv",
+            "t_mscon_contract.csv": "t_mscon_contract_虚拟数据.csv",
+            "t_conl_case.csv": "t_conl_case_虚拟数据.csv",
+            "t_conl_disputeregist.csv": "t_conl_disputeregist_虚拟数据.csv",
+            "t_mscon_performplanin.csv": "t_mscon_performplanin_虚拟数据.csv",
+            "t_mscon_performplanout.csv": "t_mscon_performplanout_虚拟数据.csv",
+        }
+        
+        # Create symlinks or copies
+        for source_name, target_name in file_mapping.items():
+            source_file = local_path / source_name
+            target_file = temp_mock_dir / target_name
+            if source_file.exists():
+                if target_file.exists():
+                    target_file.unlink()
+                # Use copy instead of symlink for better compatibility
+                import shutil
+                shutil.copy2(source_file, target_file)
+        
+        try:
+            # Use EnhancedGraphDataGenerator to generate graph data
+            generator = EnhancedGraphDataGenerator(temp_mock_dir, graph_path)
+            generator.run()
+            print(f"\n✓ Graph data generated successfully in {graph_dir}")
+        finally:
+            # Clean up temporary directory
+            import shutil
+            if temp_mock_dir.exists():
+                shutil.rmtree(temp_mock_dir)
+
 
 if __name__ == "__main__":
     data_pipeline = DataPipeline()
@@ -128,3 +187,9 @@ if __name__ == "__main__":
         ],
     }
     data_pipeline.sync(sync_config, "./data/local_data", max_workers=8)
+    
+    # Generate graph data from local_data
+    print("\n" + "="*60)
+    print("Generating graph data from local_data...")
+    print("="*60)
+    data_pipeline.generate_graph_data("./data/local_data", "./data/graph_data")

@@ -151,15 +151,27 @@ class EnhancedGraphDataGenerator:
             if fid is None:
                 continue
             node_id = f"USER_{fid:03d}"
+            # Generate email and phone if not present
+            number = row.get("FNUMBER", "").strip()
+            email = row.get("FEMAIL", "").strip()
+            phone = row.get("FPHONE", "").strip()
+            if not email and number:
+                email = f"{number.lower()}@cnbuild-mail.com"
+            if not phone and number:
+                # Generate phone based on number
+                phone = f"139{6000000 + fid:07d}"
+            
             person = {
                 "node_id": node_id,
                 "node_type": "Person",
                 "name": row.get("FTRUENAME", "").strip(),
-                "number": row.get("FNUMBER", "").strip(),
+                "number": number,
                 "id_card": row.get("FIDCARD", "").strip(),
                 "gender": row.get("FGENDER", "").strip(),
                 "birthday": row.get("FBIRTHDAY", "").strip(),
                 "status": row.get("FSTATUS", "").strip(),
+                "email": email,
+                "phone": phone,
             }
             self.person_nodes.append(person)
             self.user_id_by_fid[fid] = node_id
@@ -394,55 +406,75 @@ class EnhancedGraphDataGenerator:
                 edge_counter += 1
 
         for row in plan_in:
-            fid = parse_int(row.get("FID"))
+            fid = parse_int(row.get("FID") or row.get("fid"))
             if fid is None:
                 continue
             txn_id = f"TXN_IN_{fid:04d}"
-            contract_id = parse_int(row.get("FCONTRACTID"))
+            contract_id = parse_int(row.get("FCONTRACTID") or row.get("fcontractid"))
             contract = self.contract_lookup.get(contract_id, {})
-            party_a = self._get_company_node(row.get("FPARTAID"), contract.get("FPATYPE"))
-            party_b = self._get_company_node(row.get("FPARTBID"), contract.get("FPBTYPE"))
+            party_a = self._get_company_node(row.get("FPARTAID") or row.get("fpartaid"), contract.get("FPATYPE") or contract.get("fpatype"))
+            party_b = self._get_company_node(row.get("FPARTBID") or row.get("fpartbid"), contract.get("FPBTYPE") or contract.get("fpbtype"))
+            
+            # Get performance status mapping: A=待履约, B=履约中, C=已履约
+            perform_status = (row.get("FPERFORMSTATUS") or row.get("fperformstatus") or "A").strip().upper()
+            status_map = {"A": "待履约", "B": "履约中", "C": "已履约"}
+            perform_status_desc = status_map.get(perform_status, "待履约")
+            
             self.transaction_nodes.append(
                 {
                     "node_id": txn_id,
                     "node_type": "Transaction",
                     "transaction_type": "INFLOW",
-                    "transaction_no": row.get("FBILLNO", "").strip(),
-                    "contract_no": row.get("FCONTRACTNO", "").strip(),
-                    "amount": format_amount(row.get("FAMOUNT")),
-                    "transaction_date": row.get("FBIZTIME", "").strip(),
-                    "status": row.get("FSTATUS", "").strip(),
-                    "description": row.get("FDESCRIPTION", "").strip(),
+                    "transaction_no": (row.get("FBILLNO") or row.get("fbillno") or "").strip(),
+                    "contract_no": (row.get("FCONTRACTNO") or row.get("fcontractno") or "").strip(),
+                    "amount": format_amount(row.get("FAMOUNT") or row.get("famount")),
+                    "transaction_date": (row.get("FBIZTIME") or row.get("fbiztime") or "").strip(),
+                    "status": (row.get("FSTATUS") or row.get("fstatus") or "").strip(),
+                    "description": (row.get("FDESCRIPTION") or row.get("fdescription") or "").strip(),
+                    "fpaidamount": format_amount(row.get("FPAIDALLAMOUNT") or row.get("fpaidallamount")),
+                    "ftotalamount": format_amount(row.get("FTOTALAMOUNT") or row.get("ftotalamount")),
+                    "fbiztimeend": (row.get("FBIZTIMEEND") or row.get("fbiztimeend") or "").strip(),
+                    "fperformstatus": perform_status,
                 }
             )
-            pay_desc = f"付款-{row.get('FPARTBNAME', '').strip()}向{row.get('FPARTANAME', '').strip()}支付"
-            recv_desc = f"收款-{row.get('FPARTANAME', '').strip()}收到{row.get('FPARTBNAME', '').strip()}付款"
+            pay_desc = f"付款-{(row.get('FPARTBNAME') or row.get('fpartbname') or '').strip()}向{(row.get('FPARTANAME') or row.get('fpartaname') or '').strip()}支付"
+            recv_desc = f"收款-{(row.get('FPARTANAME') or row.get('fpartaname') or '').strip()}收到{(row.get('FPARTBNAME') or row.get('fpartbname') or '').strip()}付款"
             create_edges(txn_id, party_b, party_a, pay_desc, recv_desc)
 
         for row in plan_out:
-            fid = parse_int(row.get("FID"))
+            fid = parse_int(row.get("FID") or row.get("fid"))
             if fid is None:
                 continue
             txn_id = f"TXN_OUT_{fid:04d}"
-            contract_id = parse_int(row.get("FCONTRACTID"))
+            contract_id = parse_int(row.get("FCONTRACTID") or row.get("fcontractid"))
             contract = self.contract_lookup.get(contract_id, {})
-            party_a = self._get_company_node(row.get("FPARTAID"), contract.get("FPATYPE"))
-            party_b = self._get_company_node(row.get("FPARTBID"), contract.get("FPBTYPE"))
+            party_a = self._get_company_node(row.get("FPARTAID") or row.get("fpartaid"), contract.get("FPATYPE") or contract.get("fpatype"))
+            party_b = self._get_company_node(row.get("FPARTBID") or row.get("fpartbid"), contract.get("FPBTYPE") or contract.get("fpbtype"))
+            
+            # Get performance status mapping: A=待履约, B=履约中, C=已履约
+            perform_status = (row.get("FPERFORMSTATUS") or row.get("fperformstatus") or "A").strip().upper()
+            status_map = {"A": "待履约", "B": "履约中", "C": "已履约"}
+            perform_status_desc = status_map.get(perform_status, "待履约")
+            
             self.transaction_nodes.append(
                 {
                     "node_id": txn_id,
                     "node_type": "Transaction",
                     "transaction_type": "OUTFLOW",
-                    "transaction_no": row.get("FBILLNO", "").strip(),
-                    "contract_no": row.get("FCONTRACTNO", "").strip(),
-                    "amount": format_amount(row.get("FAMOUNT")),
-                    "transaction_date": row.get("FBIZTIME", "").strip(),
-                    "status": row.get("FSTATUS", "").strip(),
-                    "description": row.get("FDESCRIPTION", "").strip(),
+                    "transaction_no": (row.get("FBILLNO") or row.get("fbillno") or "").strip(),
+                    "contract_no": (row.get("FCONTRACTNO") or row.get("fcontractno") or "").strip(),
+                    "amount": format_amount(row.get("FAMOUNT") or row.get("famount")),
+                    "transaction_date": (row.get("FBIZTIME") or row.get("fbiztime") or "").strip(),
+                    "status": (row.get("FSTATUS") or row.get("fstatus") or "").strip(),
+                    "description": (row.get("FDESCRIPTION") or row.get("fdescription") or "").strip(),
+                    "fpaidamount": format_amount(row.get("FPAIDALLAMOUNT") or row.get("fpaidallamount")),
+                    "ftotalamount": format_amount(row.get("FTOTALAMOUNT") or row.get("ftotalamount")),
+                    "fbiztimeend": (row.get("FBIZTIMEEND") or row.get("fbiztimeend") or "").strip(),
+                    "fperformstatus": perform_status,
                 }
             )
-            pay_desc = f"付款-{row.get('FPARTANAME', '').strip()}向{row.get('FPARTBNAME', '').strip()}支付"
-            recv_desc = f"收款-{row.get('FPARTBNAME', '').strip()}收到{row.get('FPARTANAME', '').strip()}付款"
+            pay_desc = f"付款-{(row.get('FPARTANAME') or row.get('fpartaname') or '').strip()}向{(row.get('FPARTBNAME') or row.get('fpartbname') or '').strip()}支付"
+            recv_desc = f"收款-{(row.get('FPARTBNAME') or row.get('fpartbname') or '').strip()}收到{(row.get('FPARTANAME') or row.get('fpartaname') or '').strip()}付款"
             create_edges(txn_id, party_a, party_b, pay_desc, recv_desc)
 
         self.transaction_nodes.sort(key=lambda n: n["node_id"])
@@ -725,7 +757,7 @@ class EnhancedGraphDataGenerator:
         print("\nWriting output files...")
         write_csv(
             self.graph_dir / "nodes_person.csv",
-            ["node_id", "node_type", "name", "number", "id_card", "gender", "birthday", "status"],
+            ["node_id", "node_type", "name", "number", "id_card", "gender", "birthday", "status", "email", "phone"],
             self.person_nodes,
         )
         write_csv(
@@ -784,6 +816,10 @@ class EnhancedGraphDataGenerator:
                 "transaction_date",
                 "status",
                 "description",
+                "fpaidamount",
+                "ftotalamount",
+                "fbiztimeend",
+                "fperformstatus",
             ],
             self.transaction_nodes,
         )

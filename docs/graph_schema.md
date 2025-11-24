@@ -21,6 +21,8 @@
 | gender | string | 性别 | 1:男 2:女 |
 | birthday | string | 出生日期 | 1990-01-01 |
 | status | string | 数据状态 | C:已审核 |
+| email | string | 邮箱 | emp0001@cnbuild-mail.com |
+| phone | string | 电话 | 13962000001 |
 
 **数据来源**: t_sec_user_虚拟数据.csv
 
@@ -34,7 +36,9 @@ CREATE TAG IF NOT EXISTS Person (
     id_card string,
     gender string,
     birthday string,
-    status string
+    status string,
+    email string,
+    phone string
 );
 ```
 
@@ -162,6 +166,10 @@ CREATE TAG IF NOT EXISTS LegalEvent (
 | transaction_date | string | 交易日期 | 2025-09-20 |
 | status | string | 状态 | C:已完成 |
 | description | string | 描述 | 建材采购首期款项流入 |
+| fpaidamount | double | 已履约金额 | 1898679.00 |
+| ftotalamount | double | 应履约金额 | 2675136.00 |
+| fbiztimeend | string | 履约截止日期 | 2026-04-02 |
+| fperformstatus | string | 履约状态 | A:待履约 B:履约中 C:已履约 |
 
 **数据来源**: 
 - t_mscon_performplanin_虚拟数据.csv (流入)
@@ -178,7 +186,11 @@ CREATE TAG IF NOT EXISTS Transaction (
     amount double,
     transaction_date string,
     status string,
-    description string
+    description string,
+    fpaidamount double,
+    ftotalamount double,
+    fbiztimeend string,
+    fperformstatus string
 );
 ```
 
@@ -519,7 +531,9 @@ CREATE TAG IF NOT EXISTS Person (
     id_card string,
     gender string,
     birthday string,
-    status string
+    status string,
+    email string,
+    phone string
 );
 
 CREATE TAG IF NOT EXISTS Company (
@@ -558,7 +572,11 @@ CREATE TAG IF NOT EXISTS Transaction (
     amount double,
     transaction_date string,
     status string,
-    description string
+    description string,
+    fpaidamount double,
+    ftotalamount double,
+    fbiztimeend string,
+    fperformstatus string
 );
 
 -- 创建边Edge

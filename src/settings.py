@@ -33,5 +33,13 @@ class Settings:
             "space": os.getenv("NEBULA_SPACE"),
         }
 
+    @property
+    def daas_config(self):
+        return {
+            "client_id": os.getenv("DAAS_CLIENT_ID"),
+            "client_secret": os.getenv("DAAS_CLIENT_SECRET"),
+            "base_url": os.getenv("DAAS_BASE_URL"),
+        }
+
 
 settings = Settings()

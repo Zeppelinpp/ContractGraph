@@ -8,6 +8,7 @@ import os
 import pandas as pd
 from collections import defaultdict
 from src.utils.nebula_utils import get_nebula_session, execute_query
+from src.utils.embedding import compute_edge_weights
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
@@ -61,9 +62,13 @@ def calculate_init_score(company_id, legal_events):
     return min(score, 1.0)
 
 
-def load_weighted_graph(session):
+def load_weighted_graph(session, use_embedding_weights=True):
     """
     从 Nebula Graph 加载图数据并构建加权邻接表
+
+    Args:
+        session: Nebula Graph session
+        use_embedding_weights: 是否使用 embedding 计算的动态权重，默认 True
 
     Returns:
         dict: {
@@ -73,6 +78,13 @@ def load_weighted_graph(session):
         }
     """
     graph = {"nodes": set(), "edges": defaultdict(list), "out_degree": defaultdict(int)}
+    
+    # 如果使用 embedding 权重，预先计算所有边的权重
+    embedding_weights = {}
+    if use_embedding_weights:
+        print("  计算 embedding 边权重...")
+        embedding_weights = compute_edge_weights(session=session, limit=10000)
+        print(f"  已计算 {len(embedding_weights)} 条边的动态权重")
 
     # 查询所有公司节点
     company_query = """
@@ -95,7 +107,10 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("CONTROLS", 0.3)
+            # 优先使用 embedding 权重，否则使用静态权重
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("CONTROLS", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -111,7 +126,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("LEGAL_PERSON", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("LEGAL_PERSON", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -127,7 +144,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("TRADES_WITH", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("TRADES_WITH", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -143,7 +162,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("IS_SUPPLIER", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("IS_SUPPLIER", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -159,7 +180,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("IS_CUSTOMER", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("IS_CUSTOMER", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -175,7 +198,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("PAYS", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("PAYS", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -191,7 +216,9 @@ def load_weighted_graph(session):
         from_node = row.get("from_node", "")
         to_node = row.get("to_node", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get("RECEIVES", 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("RECEIVES", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -208,7 +235,9 @@ def load_weighted_graph(session):
         to_node = row.get("to_node", "")
         edge_type = row.get("edge_type", "")
         if from_node and to_node:
-            weight = EDGE_WEIGHTS.get(edge_type, 0.3)
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get(edge_type, 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))

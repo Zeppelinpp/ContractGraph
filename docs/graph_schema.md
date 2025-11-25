@@ -26,7 +26,7 @@
 
 **数据来源**: t_sec_user_虚拟数据.csv
 
-**节点数量**: 80个
+**节点数量**: 165个
 
 **Schema定义**:
 ```ngql
@@ -67,7 +67,7 @@ CREATE TAG IF NOT EXISTS Person (
 - t_bd_customer_虚拟数据.csv (客户)
 - t_mscon_counterpart_虚拟数据.csv (相对方)
 
-**节点数量**: 92个
+**节点数量**: 90个
 
 **Schema定义**:
 ```ngql
@@ -100,7 +100,7 @@ CREATE TAG IF NOT EXISTS Company (
 
 **数据来源**: t_mscon_contract_虚拟数据.csv
 
-**节点数量**: 102个
+**节点数量**: 100个
 
 **Schema定义**:
 ```ngql
@@ -135,7 +135,7 @@ CREATE TAG IF NOT EXISTS Contract (
 - t_conl_case_虚拟数据.csv (案件)
 - t_conl_disputeregist_虚拟数据.csv (纠纷)
 
-**节点数量**: 22个
+**节点数量**: 20个
 
 **Schema定义**:
 ```ngql
@@ -369,6 +369,41 @@ USER_001 -[:INVOLVED_IN]-> CASE_001
 
 **边数量**: 20条 (案件10条 + 纠纷10条)
 
+---
+
+### 11. HAS_PARTY（合同参与方反向边）【新增】
+
+**方向**: Contract → Company
+
+**用途**: 表示合同与参与方公司的反向关系，用于风险传导分析
+
+**属性**:
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| properties | string | 边属性描述 |
+
+**生成逻辑**: 从 PARTY_A/B/C/D 边自动生成反向边，用于 PageRank 算法中的风险传导
+
+**边数量**: 200条（与 PARTY_A/B/C/D 边一一对应）
+
+**Schema定义**:
+```ngql
+CREATE EDGE IF NOT EXISTS HAS_PARTY (
+    properties string
+);
+```
+
+**示例**:
+```ngql
+-- 建材采购合同 关联 华信建材有限公司
+CON_001 -[:HAS_PARTY]-> SUP_001
+properties: "乙方-华信建材有限公司"
+```
+
+**注意**: 此边类型在数据导入时自动生成，不直接存在于 CSV 文件中
+
+---
+
 **Schema定义**:
 ```ngql
 CREATE EDGE IF NOT EXISTS RELATED_TO (
@@ -593,6 +628,7 @@ CREATE EDGE IF NOT EXISTS IS_SUPPLIER (properties string);
 CREATE EDGE IF NOT EXISTS IS_CUSTOMER (properties string);
 CREATE EDGE IF NOT EXISTS PAYS (properties string);
 CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
+CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 ```
 
 ---
@@ -602,12 +638,12 @@ CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 ### 节点统计
 | 节点类型 | 数量 | 说明 |
 |---------|------|------|
-| Person | 80 | 人员节点 |
-| Company | 92 | 公司节点 |
-| Contract | 102 | 合同节点 |
-| LegalEvent | 22 | 法律事件节点 |
+| Person | 165 | 人员节点 |
+| Company | 90 | 公司节点 |
+| Contract | 100 | 合同节点 |
+| LegalEvent | 20 | 法律事件节点 |
 | Transaction | 60 | 交易节点 |
-| **总计** | **356** | |
+| **总计** | **435** | |
 
 ### 边统计
 | 边类型 | 数量 | 说明 |
@@ -625,16 +661,17 @@ CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 | IS_CUSTOMER | 73 | 客户关系 |
 | PAYS | 60 | 支付关系 |
 | RECEIVES | 60 | 收款关系 |
-| **总计** | **671** | |
+| HAS_PARTY | 200 | 合同参与方反向边 |
+| **总计** | **871** | |
 
 ---
 
 ## 业务场景支持
 
 ### 1. 法律事件风险传导
-**路径**: Person → LEGAL_PERSON → Company → CONTROLS → Company → PARTY_A/B → Contract → PARTY_A/B → Company
+**路径**: Person → LEGAL_PERSON → Company → CONTROLS → Company → PARTY_A/B → Contract → HAS_PARTY → Company
 
-**用途**: 追踪法人代表涉及法律事件后，风险如何通过控股关系和合同关系传导到交易对手
+**用途**: 追踪法人代表涉及法律事件后，风险如何通过控股关系和合同关系传导到交易对手。使用 HAS_PARTY 反向边实现合同风险向参与方的传导。
 
 ### 2. 循环交易检测
 **路径**: Company → TRADES_WITH → Company → TRADES_WITH → Company → ... → Company (形成闭环)
@@ -651,6 +688,11 @@ CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 
 **用途**: 追踪实际资金流向，验证合同履约情况
 
+### 5. 风险传导分析（FraudRank）
+**路径**: LegalEvent → RELATED_TO → Contract → HAS_PARTY → Company → [多种关系] → Company
+
+**用途**: 通过 PageRank 算法，将法律事件风险通过合同关系（HAS_PARTY）传导到公司，再通过控股、交易等关系进一步传导
+
 ---
 
 ## Schema版本历史
@@ -660,7 +702,9 @@ CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 - 新增Transaction节点类型
 - 新增IS_SUPPLIER、IS_CUSTOMER关系边
 - 新增PAYS、RECEIVES关系边
+- 新增HAS_PARTY反向边（用于风险传导分析）
 - 通过关系边表达公司类型，而非节点属性
+- Person节点新增email、phone字段
 
 ### v1.0
 - 初始版本
@@ -673,23 +717,25 @@ CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 ## 数据文件清单
 
 ### 节点文件
-- `nodes_person.csv` (80行)
-- `nodes_company.csv` (92行)
-- `nodes_contract.csv` (102行)
-- `nodes_legal_event.csv` (22行)
-- `nodes_transaction.csv` (60行)
+- `nodes_person.csv` (165行，包含header)
+- `nodes_company.csv` (90行，包含header)
+- `nodes_contract.csv` (100行，包含header)
+- `nodes_legal_event.csv` (20行，包含header)
+- `nodes_transaction.csv` (60行，包含header)
 
 ### 边文件
-- `edges_legal_person.csv` (90行)
-- `edges_controls.csv` (15行)
-- `edges_party.csv` (200行)
-- `edges_trades_with.csv` (100行)
-- `edges_case_person.csv` (10行)
-- `edges_case_contract.csv` (10行)
-- `edges_dispute_contract.csv` (10行)
-- `edges_is_supplier.csv` (43行)
-- `edges_is_customer.csv` (73行)
-- `edges_company_transaction.csv` (120行)
+- `edges_legal_person.csv` (90行，包含header)
+- `edges_controls.csv` (15行，包含header)
+- `edges_party.csv` (200行，包含header)
+- `edges_trades_with.csv` (100行，包含header)
+- `edges_case_person.csv` (10行，包含header)
+- `edges_case_contract.csv` (10行，包含header)
+- `edges_dispute_contract.csv` (10行，包含header)
+- `edges_is_supplier.csv` (43行，包含header)
+- `edges_is_customer.csv` (73行，包含header)
+- `edges_company_transaction.csv` (120行，包含header)
+
+**注意**: `HAS_PARTY` 边在导入时自动从 `PARTY_A/B/C/D` 边生成，不单独存在于 CSV 文件中
 
 ---
 
@@ -704,8 +750,11 @@ export NEBULA_USERNAME="root"
 export NEBULA_PASSWORD="nebula"
 export NEBULA_SPACE="contract_1117"
 
-# 运行导入脚本
-uv run python src/nebula_import.py
+# 运行导入脚本（使用 enhanced_graph_data）
+uv run python src/scripts/nebula_import.py --data-dir enhanced_graph_data
+
+# 或使用默认 graph_data
+uv run python src/scripts/nebula_import.py
 ```
 
 ---

@@ -132,7 +132,11 @@ uv run python -m src.analysis.perform_risk
 
 ### 批量运行
 ```bash
+# 运行前4个场景（fraud_rank, circular_trade, shell_company, collusion）
 uv run python -m src.analysis.run_all_analysis
+
+# 履约风险检测需要单独运行（需要指定当前日期参数）
+uv run python -m src.analysis.perform_risk
 ```
 
 ---

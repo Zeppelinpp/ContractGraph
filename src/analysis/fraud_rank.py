@@ -24,6 +24,7 @@ EDGE_WEIGHTS = {
     "IS_CUSTOMER": 0.40,
     "PARTY_A": 0.50,
     "PARTY_B": 0.50,
+    "HAS_PARTY": 1.0,  # Contract -> Company, 合同风险全额传导给参与方
 }
 
 
@@ -243,16 +244,36 @@ def load_weighted_graph(session, use_embedding_weights=True):
             graph["edges"][from_node].append((to_node, weight))
             graph["out_degree"][from_node] += 1
 
+    # 查询 HAS_PARTY 反向边（Contract -> Company）
+    # 使合同的风险能够传导给参与公司
+    has_party_query = """
+    MATCH (con:Contract)-[:HAS_PARTY]->(c:Company)
+    RETURN id(con) as from_node, id(c) as to_node
+    """
+    rows = execute_query(session, has_party_query)
+    for row in rows:
+        from_node = row.get("from_node", "")
+        to_node = row.get("to_node", "")
+        if from_node and to_node:
+            weight = embedding_weights.get((from_node, to_node))
+            if weight is None:
+                weight = EDGE_WEIGHTS.get("HAS_PARTY", 1.0)
+            graph["nodes"].add(from_node)
+            graph["nodes"].add(to_node)
+            graph["edges"][from_node].append((to_node, weight))
+            graph["out_degree"][from_node] += 1
+
     return graph
 
 
 def initialize_risk_seeds(session):
     """
     从法律事件数据初始化风险种子
+    优化：先给合同分配风险，再通过 HAS_PARTY 边在 PageRank 中传导给公司
     """
     init_scores = defaultdict(float)
 
-    # 查询合同关联的法律事件
+    # 查询合同关联的法律事件，直接给合同分配初始风险
     contract_event_query = """
     MATCH (con:Contract)-[:RELATED_TO]->(le:LegalEvent)
     RETURN id(con) as contract_id, id(le) as event_id,
@@ -262,22 +283,7 @@ def initialize_risk_seeds(session):
     """
     contract_events = execute_query(session, contract_event_query)
 
-    # 查询合同的公司关系（甲方/乙方）
-    contract_companies_query = """
-    MATCH (c:Company)-[:PARTY_A|PARTY_B]->(con:Contract)
-    RETURN id(con) as contract_id, id(c) as company_id
-    """
-    contract_companies = execute_query(session, contract_companies_query)
-
-    # 构建合同 -> 公司映射
-    contract_to_companies = defaultdict(list)
-    for row in contract_companies:
-        contract_id = row.get("contract_id", "")
-        company_id = row.get("company_id", "")
-        if contract_id and company_id:
-            contract_to_companies[contract_id].append(company_id)
-
-    # 计算初始分数
+    # 给合同分配初始风险分数
     for row in contract_events:
         contract_id = row.get("contract_id", "")
         event_id = row.get("event_id", "")
@@ -287,11 +293,12 @@ def initialize_risk_seeds(session):
 
         if contract_id and event_id:
             event = {"event_type": event_type, "amount": amount, "status": status}
-            base_score = calculate_init_score(None, [event])
+            contract_score = calculate_init_score(None, [event])
+            # 合同可能关联多个法律事件，取最大值
+            init_scores[contract_id] = max(init_scores[contract_id], contract_score)
 
-            # 将风险分配给该合同的甲乙方
-            for company_id in contract_to_companies.get(contract_id, []):
-                init_scores[company_id] = max(init_scores[company_id], base_score)
+    # 注意：不再直接给公司分配初始分数
+    # 公司的风险将通过 Contract->Company (HAS_PARTY) 边在 PageRank 迭代中传导
 
     return dict(init_scores)
 

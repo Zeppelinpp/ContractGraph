@@ -85,7 +85,8 @@ def risk_gradient_view(
     size_by: str = 'out_degree',
     limit: int = 10000,
     dimensions: int = 32,
-    figsize: Tuple[int, int] = (14, 10)
+    figsize: Tuple[int, int] = (14, 10),
+    node_type_filter: Optional[str] = None
 ):
     """
     视角二：风险染色视角 (Risk Gradient View)
@@ -99,6 +100,7 @@ def risk_gradient_view(
         limit: 查询边的数量限制
         dimensions: embedding 维度
         figsize: 图片大小
+        node_type_filter: 节点类型过滤，可选 'Company', 'Person', 'Contract', None 表示不过滤
     """
     should_release = False
     if session is None:
@@ -121,6 +123,18 @@ def risk_gradient_view(
         print("\n[2/5] 提取 embedding 向量...")
         embeddings = extract_embeddings(model, node_ids_list)
         print(f"  向量维度: {embeddings.shape}")
+        
+        # 应用节点类型过滤
+        if node_type_filter:
+            print(f"\n  应用节点类型过滤: {node_type_filter}")
+            filtered_indices = [i for i, node_id in enumerate(node_ids_list) 
+                              if node_to_type.get(node_id) == node_type_filter]
+            if not filtered_indices:
+                print(f"  ! 警告：未找到类型为 {node_type_filter} 的节点")
+                return
+            node_ids_list = [node_ids_list[i] for i in filtered_indices]
+            embeddings = embeddings[filtered_indices]
+            print(f"  过滤后节点数: {len(node_ids_list)}")
         
         # Step 3: 使用 t-SNE 降维到 2D
         print("\n[3/5] 使用 t-SNE 降维到 2D...")
@@ -168,7 +182,10 @@ def risk_gradient_view(
         
         ax.set_xlabel('t-SNE Dimension 1', fontsize=12)
         ax.set_ylabel('t-SNE Dimension 2', fontsize=12)
-        ax.set_title('Risk Gradient View: FraudScore Distribution in Vector Space', fontsize=14, fontweight='bold')
+        title = 'Risk Gradient View: FraudScore Distribution in Vector Space'
+        if node_type_filter:
+            title += f' ({node_type_filter} Only)'
+        ax.set_title(title, fontsize=14, fontweight='bold')
         
         cbar = plt.colorbar(scatter, ax=ax)
         cbar.set_label('FraudScore (Red=High Risk, Green=Low Risk)', fontsize=10)
@@ -232,7 +249,8 @@ def implicit_link_view(
     limit: int = 10000,
     dimensions: int = 32,
     figsize: Tuple[int, int] = (14, 10),
-    max_links: int = 500
+    max_links: int = 500,
+    node_type_filter: Optional[str] = None
 ):
     """
     视角三：隐式关联视角 (Implicit Link View)
@@ -247,6 +265,7 @@ def implicit_link_view(
         dimensions: embedding 维度
         figsize: 图片大小
         max_links: 最多显示的隐式关联数量（避免图像过于拥挤）
+        node_type_filter: 节点类型过滤，可选 'Company', 'Person', 'Contract', None 表示不过滤
     """
     should_release = False
     if session is None:
@@ -269,6 +288,18 @@ def implicit_link_view(
         print("\n[2/5] 提取 embedding 向量...")
         embeddings = extract_embeddings(model, node_ids_list)
         print(f"  向量维度: {embeddings.shape}")
+        
+        # 应用节点类型过滤
+        if node_type_filter:
+            print(f"\n  应用节点类型过滤: {node_type_filter}")
+            filtered_indices = [i for i, node_id in enumerate(node_ids_list) 
+                              if node_to_type.get(node_id) == node_type_filter]
+            if not filtered_indices:
+                print(f"  ! 警告：未找到类型为 {node_type_filter} 的节点")
+                return
+            node_ids_list = [node_ids_list[i] for i in filtered_indices]
+            embeddings = embeddings[filtered_indices]
+            print(f"  过滤后节点数: {len(node_ids_list)}")
         
         # Step 3: 使用 t-SNE 降维到 2D
         print("\n[3/5] 使用 t-SNE 降维到 2D...")
@@ -357,11 +388,10 @@ def implicit_link_view(
         
         ax.set_xlabel('t-SNE Dimension 1', fontsize=12)
         ax.set_ylabel('t-SNE Dimension 2', fontsize=12)
-        ax.set_title(
-            f'Implicit Link View: Implicit Links with Similarity >= {similarity_threshold}',
-            fontsize=14,
-            fontweight='bold'
-        )
+        title = f'Implicit Link View: Implicit Links with Similarity >= {similarity_threshold}'
+        if node_type_filter:
+            title += f' ({node_type_filter} Only)'
+        ax.set_title(title, fontsize=14, fontweight='bold')
         ax.legend(loc='best', fontsize=10)
         ax.grid(True, alpha=0.3)
         
@@ -415,7 +445,8 @@ def interactive_risk_exploration(
     similarity_threshold: float = 0.9,
     limit: int = 10000,
     dimensions: int = 32,
-    max_links: int = 500
+    max_links: int = 500,
+    node_type_filter: Optional[str] = None
 ):
     """
     生成交互式 HTML 报告，结合风险染色和隐式关联两个视角
@@ -428,6 +459,7 @@ def interactive_risk_exploration(
         limit: 查询边的数量限制
         dimensions: embedding 维度
         max_links: 最多显示的隐式关联数量
+        node_type_filter: 节点类型过滤，可选 'Company', 'Person', 'Contract', None 表示不过滤
     """
     should_release = False
     if session is None:
@@ -450,6 +482,18 @@ def interactive_risk_exploration(
         print("\n[2/6] Extracting embedding vectors...")
         embeddings = extract_embeddings(model, node_ids_list)
         print(f"  Embedding shape: {embeddings.shape}")
+        
+        # 应用节点类型过滤
+        if node_type_filter:
+            print(f"\n  Applying node type filter: {node_type_filter}")
+            filtered_indices = [i for i, node_id in enumerate(node_ids_list) 
+                              if node_to_type.get(node_id) == node_type_filter]
+            if not filtered_indices:
+                print(f"  ! Warning: No nodes of type {node_type_filter} found")
+                return
+            node_ids_list = [node_ids_list[i] for i in filtered_indices]
+            embeddings = embeddings[filtered_indices]
+            print(f"  Filtered nodes: {len(node_ids_list)}")
         
         # Step 3: 使用 t-SNE 降维到 2D
         print("\n[3/6] Reducing dimensions with t-SNE...")
@@ -579,10 +623,14 @@ def interactive_risk_exploration(
             ))
         
         # 布局设置
+        title_text = "<b>Contract Risk Graph Embedding Space</b>"
+        if node_type_filter:
+            title_text += f" ({node_type_filter} Only)"
+        title_text += "<br><sup>Shape=Type, Color=Risk Score, Red Dashed Lines=Implicit Links</sup>"
+        
         fig.update_layout(
             title=dict(
-                text="<b>Contract Risk Graph Embedding Space</b><br>" +
-                     "<sup>Shape=Type, Color=Risk Score, Red Dashed Lines=Implicit Links</sup>",
+                text=title_text,
                 x=0.5,
                 font=dict(size=16)
             ),
@@ -653,53 +701,66 @@ def main():
                        help='隐式关联视角的相似度阈值')
     parser.add_argument('--limit', type=int, default=10000, help='查询边的数量限制')
     parser.add_argument('--dimensions', type=int, default=32, help='embedding 维度')
+    parser.add_argument('--node-type', type=str, 
+                       choices=['Company', 'Person', 'Contract', 'all'],
+                       default='all', 
+                       help='节点类型过滤 (Company/Person/Contract/all)')
     args = parser.parse_args()
     
     output_dir = os.path.join(os.path.dirname(__file__), "../..", "reports")
     os.makedirs(output_dir, exist_ok=True)
+    
+    # 处理节点类型过滤参数
+    node_type_filter = None if args.node_type == 'all' else args.node_type
     
     session = None
     try:
         session = get_nebula_session()
         
         if args.view in ['risk', 'all']:
-            risk_output = os.path.join(
-                output_dir,
-                f"risk_gradient_view_{args.size_by}.png"
-            )
+            filename = f"risk_gradient_view_{args.size_by}"
+            if node_type_filter:
+                filename += f"_{node_type_filter}"
+            risk_output = os.path.join(output_dir, f"{filename}.png")
+            
             risk_gradient_view(
                 session=session,
                 output_path=risk_output,
                 size_by=args.size_by,
                 limit=args.limit,
-                dimensions=args.dimensions
+                dimensions=args.dimensions,
+                node_type_filter=node_type_filter
             )
         
         if args.view in ['implicit', 'all']:
-            implicit_output = os.path.join(
-                output_dir,
-                f"implicit_link_view_threshold_{args.similarity_threshold}.png"
-            )
+            filename = f"implicit_link_view_threshold_{args.similarity_threshold}"
+            if node_type_filter:
+                filename += f"_{node_type_filter}"
+            implicit_output = os.path.join(output_dir, f"{filename}.png")
+            
             implicit_link_view(
                 session=session,
                 output_path=implicit_output,
                 similarity_threshold=args.similarity_threshold,
                 limit=args.limit,
-                dimensions=args.dimensions
+                dimensions=args.dimensions,
+                node_type_filter=node_type_filter
             )
         
         if args.view == 'interactive':
-            interactive_output = os.path.join(
-                output_dir,
-                "interactive_risk_exploration.html"
-            )
+            filename = "interactive_risk_exploration"
+            if node_type_filter:
+                filename += f"_{node_type_filter}"
+            interactive_output = os.path.join(output_dir, f"{filename}.html")
+            
             interactive_risk_exploration(
                 session=session,
                 output_path=interactive_output,
                 size_by=args.size_by,
                 similarity_threshold=args.similarity_threshold,
                 limit=args.limit,
-                dimensions=args.dimensions
+                dimensions=args.dimensions,
+                node_type_filter=node_type_filter
             )
     
     finally:

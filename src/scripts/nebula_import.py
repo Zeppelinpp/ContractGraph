@@ -56,6 +56,7 @@ EDGE_TYPES = [
     "IS_CUSTOMER",
     "PAYS",
     "RECEIVES",
+    "HAS_PARTY",
 ]
 
 TAG_TYPES = ["Person", "Company", "Contract", "LegalEvent", "Transaction"]
@@ -102,10 +103,22 @@ def connect_nebula() -> ConnectionPool:
     return pool
 
 
-def execute(session, query: str):
-    result = session.execute(query)
-    if not result.is_succeeded():
-        raise RuntimeError(f"执行失败: {result.error_msg()}\nQuery: {query}")
+def execute(session, query: str, retry: int = 3, retry_delay: float = 0.5):
+    """执行查询，带重试机制"""
+    for attempt in range(retry):
+        result = session.execute(query)
+        if result.is_succeeded():
+            return result
+        
+        error_msg = result.error_msg()
+        # 如果是并发冲突错误，等待后重试
+        if "More than one request" in error_msg or "concurrent" in error_msg.lower():
+            if attempt < retry - 1:
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+        
+        # 其他错误或重试次数用完，抛出异常
+        raise RuntimeError(f"执行失败: {error_msg}\nQuery: {query}")
     return result
 
 
@@ -455,21 +468,61 @@ def import_person_nodes(session):
     if not rows:
         return 0
     count = 0
-    for row in rows:
+    batch_size = 100
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        values = []
+        for row in batch:
+            node_id = escape(row.get('node_id'))
+            value = (
+                f"\"{node_id}\": ("
+                f"\"{escape(row.get('name'))}\", "
+                f"\"{escape(row.get('number'))}\", "
+                f"\"{escape(row.get('id_card'))}\", "
+                f"\"{escape(row.get('gender'))}\", "
+                f"\"{escape(row.get('birthday'))}\", "
+                f"\"{escape(row.get('status'))}\", "
+                f"\"{escape(row.get('email', ''))}\", "
+                f"\"{escape(row.get('phone', ''))}\")"
+            )
+            values.append(value)
+        
         query = (
             "INSERT VERTEX Person(name, number, id_card, gender, birthday, status, email, phone) "
-            f"VALUES \"{escape(row.get('node_id'))}\": ("
-            f"\"{escape(row.get('name'))}\", "
-            f"\"{escape(row.get('number'))}\", "
-            f"\"{escape(row.get('id_card'))}\", "
-            f"\"{escape(row.get('gender'))}\", "
-            f"\"{escape(row.get('birthday'))}\", "
-            f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('email', ''))}\", "
-            f"\"{escape(row.get('phone', ''))}\");"
+            f"VALUES {', '.join(values)};"
         )
-        execute(session, query)
-        count += 1
+        try:
+            execute(session, query)
+            count += len(batch)
+        except RuntimeError as e:
+            # 如果批量插入失败，尝试逐条插入
+            error_msg = str(e)
+            if "More than one request" in error_msg:
+                print(f"  批量插入遇到并发冲突，改为逐条插入...")
+                for row in batch:
+                    node_id = escape(row.get('node_id'))
+                    single_query = (
+                        "INSERT VERTEX Person(name, number, id_card, gender, birthday, status, email, phone) "
+                        f"VALUES \"{node_id}\": ("
+                        f"\"{escape(row.get('name'))}\", "
+                        f"\"{escape(row.get('number'))}\", "
+                        f"\"{escape(row.get('id_card'))}\", "
+                        f"\"{escape(row.get('gender'))}\", "
+                        f"\"{escape(row.get('birthday'))}\", "
+                        f"\"{escape(row.get('status'))}\", "
+                        f"\"{escape(row.get('email', ''))}\", "
+                        f"\"{escape(row.get('phone', ''))}\");"
+                    )
+                    try:
+                        execute(session, single_query)
+                        count += 1
+                    except RuntimeError as e2:
+                        # 如果是重复顶点错误，跳过
+                        if "existed" in str(e2).lower() or "duplicate" in str(e2).lower():
+                            continue
+                        print(f"  ! 跳过节点 {node_id}: {e2}")
+            else:
+                raise
     print(f"  Person 节点导入完成: {count}")
     return count
 
@@ -479,22 +532,61 @@ def import_company_nodes(session):
     if not rows:
         return 0
     count = 0
-    for row in rows:
+    batch_size = 100
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        values = []
+        for row in batch:
+            node_id = escape(row.get('node_id'))
+            value = (
+                f"\"{node_id}\": ("
+                f"\"{escape(row.get('name'))}\", "
+                f"\"{escape(row.get('number'))}\", "
+                f"\"{escape(row.get('legal_person'))}\", "
+                f"\"{escape(row.get('credit_code'))}\", "
+                f"\"{escape(row.get('establish_date'))}\", "
+                f"\"{escape(row.get('status'))}\", "
+                f"\"{escape(row.get('description'))}\")"
+            )
+            values.append(value)
+        
         query = (
             "INSERT VERTEX Company("
             "name, number, legal_person, credit_code, "
             "establish_date, status, description) "
-            f"VALUES \"{escape(row.get('node_id'))}\": ("
-            f"\"{escape(row.get('name'))}\", "
-            f"\"{escape(row.get('number'))}\", "
-            f"\"{escape(row.get('legal_person'))}\", "
-            f"\"{escape(row.get('credit_code'))}\", "
-            f"\"{escape(row.get('establish_date'))}\", "
-            f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('description'))}\");"
+            f"VALUES {', '.join(values)};"
         )
-        execute(session, query)
-        count += 1
+        try:
+            execute(session, query)
+            count += len(batch)
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "More than one request" in error_msg:
+                print(f"  批量插入遇到并发冲突，改为逐条插入...")
+                for row in batch:
+                    node_id = escape(row.get('node_id'))
+                    single_query = (
+                        "INSERT VERTEX Company("
+                        "name, number, legal_person, credit_code, "
+                        "establish_date, status, description) "
+                        f"VALUES \"{node_id}\": ("
+                        f"\"{escape(row.get('name'))}\", "
+                        f"\"{escape(row.get('number'))}\", "
+                        f"\"{escape(row.get('legal_person'))}\", "
+                        f"\"{escape(row.get('credit_code'))}\", "
+                        f"\"{escape(row.get('establish_date'))}\", "
+                        f"\"{escape(row.get('status'))}\", "
+                        f"\"{escape(row.get('description'))}\");"
+                    )
+                    try:
+                        execute(session, single_query)
+                        count += 1
+                    except RuntimeError as e2:
+                        if "existed" in str(e2).lower() or "duplicate" in str(e2).lower():
+                            continue
+                        print(f"  ! 跳过节点 {node_id}: {e2}")
+            else:
+                raise
     print(f"  Company 节点导入完成: {count}")
     return count
 
@@ -504,21 +596,59 @@ def import_contract_nodes(session):
     if not rows:
         return 0
     count = 0
-    for row in rows:
-        amount = parse_float(row.get("amount"))
+    batch_size = 100
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        values = []
+        for row in batch:
+            node_id = escape(row.get('node_id'))
+            amount = parse_float(row.get("amount"))
+            value = (
+                f"\"{node_id}\": ("
+                f"\"{escape(row.get('contract_no'))}\", "
+                f"\"{escape(row.get('contract_name'))}\", "
+                f"{amount}, "
+                f"\"{escape(row.get('sign_date'))}\", "
+                f"\"{escape(row.get('status'))}\", "
+                f"\"{escape(row.get('description'))}\")"
+            )
+            values.append(value)
+        
         query = (
             "INSERT VERTEX Contract(contract_no, contract_name, amount, "
             "sign_date, status, description) "
-            f"VALUES \"{escape(row.get('node_id'))}\": ("
-            f"\"{escape(row.get('contract_no'))}\", "
-            f"\"{escape(row.get('contract_name'))}\", "
-            f"{amount}, "
-            f"\"{escape(row.get('sign_date'))}\", "
-            f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('description'))}\");"
+            f"VALUES {', '.join(values)};"
         )
-        execute(session, query)
-        count += 1
+        try:
+            execute(session, query)
+            count += len(batch)
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "More than one request" in error_msg:
+                print(f"  批量插入遇到并发冲突，改为逐条插入...")
+                for row in batch:
+                    node_id = escape(row.get('node_id'))
+                    amount = parse_float(row.get("amount"))
+                    single_query = (
+                        "INSERT VERTEX Contract(contract_no, contract_name, amount, "
+                        "sign_date, status, description) "
+                        f"VALUES \"{node_id}\": ("
+                        f"\"{escape(row.get('contract_no'))}\", "
+                        f"\"{escape(row.get('contract_name'))}\", "
+                        f"{amount}, "
+                        f"\"{escape(row.get('sign_date'))}\", "
+                        f"\"{escape(row.get('status'))}\", "
+                        f"\"{escape(row.get('description'))}\");"
+                    )
+                    try:
+                        execute(session, single_query)
+                        count += 1
+                    except RuntimeError as e2:
+                        if "existed" in str(e2).lower() or "duplicate" in str(e2).lower():
+                            continue
+                        print(f"  ! 跳过节点 {node_id}: {e2}")
+            else:
+                raise
     print(f"  Contract 节点导入完成: {count}")
     return count
 
@@ -528,22 +658,61 @@ def import_legal_event_nodes(session):
     if not rows:
         return 0
     count = 0
-    for row in rows:
-        amount = parse_float(row.get("amount"))
+    batch_size = 100
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        values = []
+        for row in batch:
+            node_id = escape(row.get('node_id'))
+            amount = parse_float(row.get("amount"))
+            value = (
+                f"\"{node_id}\": ("
+                f"\"{escape(row.get('event_type'))}\", "
+                f"\"{escape(row.get('event_no'))}\", "
+                f"\"{escape(row.get('event_name'))}\", "
+                f"{amount}, "
+                f"\"{escape(row.get('status'))}\", "
+                f"\"{escape(row.get('register_date'))}\", "
+                f"\"{escape(row.get('description'))}\")"
+            )
+            values.append(value)
+        
         query = (
             "INSERT VERTEX LegalEvent("
             "event_type, event_no, event_name, amount, status, register_date, description) "
-            f"VALUES \"{escape(row.get('node_id'))}\": ("
-            f"\"{escape(row.get('event_type'))}\", "
-            f"\"{escape(row.get('event_no'))}\", "
-            f"\"{escape(row.get('event_name'))}\", "
-            f"{amount}, "
-            f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('register_date'))}\", "
-            f"\"{escape(row.get('description'))}\");"
+            f"VALUES {', '.join(values)};"
         )
-        execute(session, query)
-        count += 1
+        try:
+            execute(session, query)
+            count += len(batch)
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "More than one request" in error_msg:
+                print(f"  批量插入遇到并发冲突，改为逐条插入...")
+                for row in batch:
+                    node_id = escape(row.get('node_id'))
+                    amount = parse_float(row.get("amount"))
+                    single_query = (
+                        "INSERT VERTEX LegalEvent("
+                        "event_type, event_no, event_name, amount, status, register_date, description) "
+                        f"VALUES \"{node_id}\": ("
+                        f"\"{escape(row.get('event_type'))}\", "
+                        f"\"{escape(row.get('event_no'))}\", "
+                        f"\"{escape(row.get('event_name'))}\", "
+                        f"{amount}, "
+                        f"\"{escape(row.get('status'))}\", "
+                        f"\"{escape(row.get('register_date'))}\", "
+                        f"\"{escape(row.get('description'))}\");"
+                    )
+                    try:
+                        execute(session, single_query)
+                        count += 1
+                    except RuntimeError as e2:
+                        if "existed" in str(e2).lower() or "duplicate" in str(e2).lower():
+                            continue
+                        print(f"  ! 跳过节点 {node_id}: {e2}")
+            else:
+                raise
     print(f"  LegalEvent 节点导入完成: {count}")
     return count
 
@@ -553,31 +722,77 @@ def import_transaction_nodes(session):
     if not rows:
         return 0
     count = 0
-    for row in rows:
-        amount = parse_float(row.get("amount"))
-        # Support both field names: fpaidamount and fpaidallamount
-        fpaidamount = parse_float(row.get("fpaidamount") or row.get("fpaidallamount") or "0")
-        ftotalamount = parse_float(row.get("ftotalamount", "0"))
+    batch_size = 100
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        values = []
+        for row in batch:
+            node_id = escape(row.get('node_id'))
+            amount = parse_float(row.get("amount"))
+            fpaidamount = parse_float(row.get("fpaidamount") or row.get("fpaidallamount") or "0")
+            ftotalamount = parse_float(row.get("ftotalamount", "0"))
+            value = (
+                f"\"{node_id}\": ("
+                f"\"{escape(row.get('transaction_type'))}\", "
+                f"\"{escape(row.get('transaction_no'))}\", "
+                f"\"{escape(row.get('contract_no'))}\", "
+                f"{amount}, "
+                f"\"{escape(row.get('transaction_date'))}\", "
+                f"\"{escape(row.get('status'))}\", "
+                f"\"{escape(row.get('description'))}\", "
+                f"{fpaidamount}, "
+                f"{ftotalamount}, "
+                f"\"{escape(row.get('fbiztimeend', ''))}\", "
+                f"\"{escape(row.get('fperformstatus', ''))}\")"
+            )
+            values.append(value)
+        
         query = (
             "INSERT VERTEX Transaction("
             "transaction_type, transaction_no, contract_no, amount, "
             "transaction_date, status, description, "
             "fpaidamount, ftotalamount, fbiztimeend, fperformstatus) "
-            f"VALUES \"{escape(row.get('node_id'))}\": ("
-            f"\"{escape(row.get('transaction_type'))}\", "
-            f"\"{escape(row.get('transaction_no'))}\", "
-            f"\"{escape(row.get('contract_no'))}\", "
-            f"{amount}, "
-            f"\"{escape(row.get('transaction_date'))}\", "
-            f"\"{escape(row.get('status'))}\", "
-            f"\"{escape(row.get('description'))}\", "
-            f"{fpaidamount}, "
-            f"{ftotalamount}, "
-            f"\"{escape(row.get('fbiztimeend', ''))}\", "
-            f"\"{escape(row.get('fperformstatus', ''))}\");"
+            f"VALUES {', '.join(values)};"
         )
-        execute(session, query)
-        count += 1
+        try:
+            execute(session, query)
+            count += len(batch)
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "More than one request" in error_msg:
+                print(f"  批量插入遇到并发冲突，改为逐条插入...")
+                for row in batch:
+                    node_id = escape(row.get('node_id'))
+                    amount = parse_float(row.get("amount"))
+                    fpaidamount = parse_float(row.get("fpaidamount") or row.get("fpaidallamount") or "0")
+                    ftotalamount = parse_float(row.get("ftotalamount", "0"))
+                    single_query = (
+                        "INSERT VERTEX Transaction("
+                        "transaction_type, transaction_no, contract_no, amount, "
+                        "transaction_date, status, description, "
+                        "fpaidamount, ftotalamount, fbiztimeend, fperformstatus) "
+                        f"VALUES \"{node_id}\": ("
+                        f"\"{escape(row.get('transaction_type'))}\", "
+                        f"\"{escape(row.get('transaction_no'))}\", "
+                        f"\"{escape(row.get('contract_no'))}\", "
+                        f"{amount}, "
+                        f"\"{escape(row.get('transaction_date'))}\", "
+                        f"\"{escape(row.get('status'))}\", "
+                        f"\"{escape(row.get('description'))}\", "
+                        f"{fpaidamount}, "
+                        f"{ftotalamount}, "
+                        f"\"{escape(row.get('fbiztimeend', ''))}\", "
+                        f"\"{escape(row.get('fperformstatus', ''))}\");"
+                    )
+                    try:
+                        execute(session, single_query)
+                        count += 1
+                    except RuntimeError as e2:
+                        if "existed" in str(e2).lower() or "duplicate" in str(e2).lower():
+                            continue
+                        print(f"  ! 跳过节点 {node_id}: {e2}")
+            else:
+                raise
     print(f"  Transaction 节点导入完成: {count}")
     return count
 
@@ -603,6 +818,63 @@ def import_edges_from_file(session, filename: str, fixed_type: str = None):
     return count
 
 
+def import_has_party_edges(session):
+    """
+    从现有的 PARTY_A/B/C/D 边生成 HAS_PARTY 边（Contract -> Company）
+    方向：Contract -> Company，表示合同有哪些参与方
+    """
+    print("  生成 HAS_PARTY 边（从 PARTY_A/B/C/D 推导）...")
+    execute(session, f"USE {NEBULA_SPACE};")
+    
+    # 查询所有 PARTY_A/B/C/D 边
+    query = """
+    MATCH (c:Company)-[e:PARTY_A|PARTY_B|PARTY_C|PARTY_D]->(con:Contract)
+    RETURN id(con) as contract_id, id(c) as company_id, type(e) as party_type
+    """
+    
+    # 使用 execute_query 获取结果（返回字典列表）
+    try:
+        from src.utils.nebula_utils import execute_query as utils_execute_query
+        rows = utils_execute_query(session, query)
+    except Exception as e:
+        print(f"  ! 查询失败: {e}")
+        return 0
+    
+    count = 0
+    contract_company_pairs = set()
+    
+    # 收集所有 Contract -> Company 对
+    for row in rows:
+        contract_id = row.get("contract_id", "")
+        company_id = row.get("company_id", "")
+        party_type = row.get("party_type", "")
+        
+        if contract_id and company_id:
+            # 使用 (contract_id, company_id) 作为唯一键，避免重复
+            pair_key = (contract_id, company_id)
+            if pair_key not in contract_company_pairs:
+                contract_company_pairs.add(pair_key)
+                
+                # 创建 HAS_PARTY 边：Contract -> Company
+                properties = f"参与方关系-{party_type}"
+                insert_query = (
+                    f"INSERT EDGE HAS_PARTY(properties) "
+                    f"VALUES \"{escape(contract_id)}\" -> "
+                    f"\"{escape(company_id)}\": "
+                    f"(\"{escape(properties)}\");"
+                )
+                try:
+                    execute(session, insert_query)
+                    count += 1
+                except RuntimeError as e:
+                    # 如果边已存在，跳过
+                    if "edge conflict" not in str(e).lower() and "duplicate" not in str(e).lower():
+                        print(f"  ! 插入边失败: {e}")
+    
+    print(f"  HAS_PARTY 边导入完成: {count}")
+    return count
+
+
 def import_nodes(session):
     print("\n=== 导入节点 ===")
     execute(session, f"USE {NEBULA_SPACE};")
@@ -619,6 +891,8 @@ def import_edges(session):
     import_edges_from_file(session, "edges_legal_person.csv", "LEGAL_PERSON")
     import_edges_from_file(session, "edges_controls.csv", "CONTROLS")
     import_edges_from_file(session, "edges_party.csv")
+    # 在 PARTY 边导入后，生成 HAS_PARTY 反向边
+    import_has_party_edges(session)
     import_edges_from_file(session, "edges_trades_with.csv", "TRADES_WITH")
     import_edges_from_file(session, "edges_case_person.csv", "INVOLVED_IN")
     import_edges_from_file(session, "edges_case_contract.csv", "RELATED_TO")

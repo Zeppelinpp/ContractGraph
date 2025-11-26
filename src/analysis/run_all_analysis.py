@@ -19,6 +19,7 @@ from analysis.fraud_rank import main as fraud_rank_main
 from analysis.circular_trade import main as circular_trade_main
 from analysis.shell_company import main as shell_company_main
 from analysis.collusion import main as collusion_main
+from analysis.shell_entity import main as shell_entity_main
 
 
 def main():
@@ -34,6 +35,7 @@ def main():
         ("高级循环交易检测", circular_trade_main),
         ("空壳公司网络识别", shell_company_main),
         ("关联方串通网络分析", collusion_main),
+        ("马甲公司检测（集中授信爆雷风险）", shell_entity_main),
     ]
 
     results = {}

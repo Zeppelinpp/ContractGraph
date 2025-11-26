@@ -7,34 +7,27 @@
 import os
 import pandas as pd
 from collections import defaultdict
+from typing import Optional
 from src.utils.nebula_utils import get_nebula_session, execute_query
 from src.utils.embedding import get_or_compute_edge_weights
+from src.config.models import FraudRankConfig
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 
-# 边权重设计（基于业务逻辑）
-EDGE_WEIGHTS = {
-    "CONTROLS": 0.8,
-    "LEGAL_PERSON": 0.75,
-    "PAYS": 0.65,
-    "RECEIVES": 0.60,
-    "TRADES_WITH": 0.50,
-    "IS_SUPPLIER": 0.45,
-    "IS_CUSTOMER": 0.40,
-    "PARTY_A": 0.50,
-    "PARTY_B": 0.50,
-}
+# 默认配置实例
+DEFAULT_CONFIG = FraudRankConfig()
 
 
-def calculate_init_score(company_id, legal_events):
+def calculate_init_score(company_id, legal_events, config: Optional[FraudRankConfig] = None):
     """
     根据涉及的法律事件计算初始风险分数
 
     Args:
         company_id: 公司ID
         legal_events: 该公司涉及的法律事件列表
+        config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
 
     Returns:
         float: 0-1 之间的初始风险分数
@@ -42,28 +35,32 @@ def calculate_init_score(company_id, legal_events):
     if not legal_events:
         return 0.0
 
+    if config is None:
+        config = DEFAULT_CONFIG
+
     score = 0.0
     for event in legal_events:
         # 事件类型权重
-        type_weight = {"Case": 0.8, "Dispute": 0.5}.get(event["event_type"], 0.3)
+        type_weight = config.event_type_weights.get(
+            event["event_type"], 
+            config.event_type_default_weight
+        )
 
         # 金额权重（归一化到 0-1）
-        amount_weight = min(event["amount"] / 10000000, 1.0)  # 1000万为上限
+        amount_weight = min(event["amount"] / config.amount_threshold, 1.0)
 
         # 状态权重
-        status_weight = {
-            "F": 0.9,  # 已立案
-            "I": 0.8,  # 一审
-            "J": 0.7,  # 执行
-            "N": 0.4,  # 已结案
-        }.get(event["status"], 0.5)
+        status_weight = config.status_weights.get(
+            event["status"], 
+            config.status_default_weight
+        )
 
         score += type_weight * amount_weight * status_weight
 
     return min(score, 1.0)
 
 
-def load_weighted_graph(session, use_embedding_weights=True, force_recompute=False):
+def load_weighted_graph(session, use_embedding_weights=True, force_recompute=False, config: Optional[FraudRankConfig] = None):
     """
     从 Nebula Graph 加载图数据并构建加权邻接表
 
@@ -71,6 +68,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         session: Nebula Graph session
         use_embedding_weights: 是否使用 embedding 计算的动态权重，默认 True
         force_recompute: 是否强制重新计算 embedding 权重
+        config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
 
     Returns:
         dict: {
@@ -79,6 +77,10 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
             'out_degree': defaultdict(int)
         }
     """
+    if config is None:
+        config = DEFAULT_CONFIG
+    
+    edge_weights = config.edge_weights
     graph = {"nodes": set(), "edges": defaultdict(list), "out_degree": defaultdict(int)}
 
     # 如果使用 embedding 权重，从缓存加载或计算
@@ -117,7 +119,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
             # 优先使用 embedding 权重，否则使用静态权重
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("CONTROLS", 0.3)
+                weight = edge_weights.get("CONTROLS", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -135,7 +137,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("LEGAL_PERSON", 0.3)
+                weight = edge_weights.get("LEGAL_PERSON", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -153,7 +155,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("TRADES_WITH", 0.3)
+                weight = edge_weights.get("TRADES_WITH", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -171,7 +173,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("IS_SUPPLIER", 0.3)
+                weight = edge_weights.get("IS_SUPPLIER", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -189,7 +191,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("IS_CUSTOMER", 0.3)
+                weight = edge_weights.get("IS_CUSTOMER", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -207,7 +209,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("PAYS", 0.3)
+                weight = edge_weights.get("PAYS", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -225,7 +227,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         if from_node and to_node:
             weight = embedding_weights.get((from_node, to_node))
             if weight is None:
-                weight = EDGE_WEIGHTS.get("RECEIVES", 0.3)
+                weight = edge_weights.get("RECEIVES", 0.3)
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -251,7 +253,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
                 (company_id, contract_id)
             )  # 权重查询可能需要保持原方向或重新计算
             if weight is None:
-                weight = EDGE_WEIGHTS.get(edge_type, 0.5)  # 建议适当提高此处的传导权重
+                weight = edge_weights.get(edge_type, 0.5)  # 建议适当提高此处的传导权重
 
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
@@ -261,10 +263,17 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
     return graph
 
 
-def initialize_risk_seeds(session):
+def initialize_risk_seeds(session, config: Optional[FraudRankConfig] = None):
     """
     从法律事件数据初始化风险种子
+
+    Args:
+        session: Nebula Graph session
+        config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
     """
+    if config is None:
+        config = DEFAULT_CONFIG
+        
     init_scores = defaultdict(float)
 
     # 查询合同关联的法律事件，直接给合同分配初始风险
@@ -287,7 +296,7 @@ def initialize_risk_seeds(session):
 
         if contract_id and event_id:
             event = {"event_type": event_type, "amount": amount, "status": status}
-            contract_score = calculate_init_score(None, [event])
+            contract_score = calculate_init_score(None, [event], config)
             # 合同可能关联多个法律事件，取最大值
             init_scores[contract_id] = max(init_scores[contract_id], contract_score)
 
@@ -408,13 +417,17 @@ def analyze_fraud_rank_results(fraud_scores, session, top_n=50):
     return df_report
 
 
-def main(force_recompute_embedding=False):
+def main(force_recompute_embedding=False, config: Optional[FraudRankConfig] = None):
     """
     Main function for FraudRank analysis
     
     Args:
         force_recompute_embedding: 是否强制重新计算 embedding 权重
+        config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
     """
+    if config is None:
+        config = DEFAULT_CONFIG
+        
     print("=" * 60)
     print("FraudRank 欺诈风险传导分析")
     print("=" * 60)
@@ -425,13 +438,13 @@ def main(force_recompute_embedding=False):
 
         # Step 1: 加载图数据
         print("\n[1/4] 加载图数据...")
-        graph = load_weighted_graph(session, force_recompute=force_recompute_embedding)
+        graph = load_weighted_graph(session, force_recompute=force_recompute_embedding, config=config)
         print(f"  节点数: {len(graph['nodes'])}")
         print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
 
         # Step 2: 初始化风险种子
         print("\n[2/4] 初始化风险种子节点...")
-        init_scores = initialize_risk_seeds(session)
+        init_scores = initialize_risk_seeds(session, config=config)
         seed_count = sum(1 for s in init_scores.values() if s > 0)
         print(f"  风险种子节点数: {seed_count}")
         if seed_count > 0:

@@ -1,0 +1,13 @@
+﻿edge_id,edge_type,from_node,to_node,from_type,to_type,properties
+DAAS_EVENT_EDGE_00026,ADMIN_PENALTY_OF,PEN_0001,CUS_020,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=primary
+DAAS_EVENT_EDGE_00027,ADMIN_PENALTY_OF,PEN_0002,CUS_025,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=primary
+DAAS_EVENT_EDGE_00028,ADMIN_PENALTY_OF,PEN_0003,CUS_027,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=primary
+DAAS_EVENT_EDGE_00029,ADMIN_PENALTY_OF,PEN_0004,SUP_016,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=primary
+DAAS_EVENT_EDGE_00030,ADMIN_PENALTY_OF,PEN_0005,SUP_027,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=primary
+DAAS_EVENT_EDGE_00031,ADMIN_PENALTY_OF,PEN_0006,DAAS_COMP_0021,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00032,ADMIN_PENALTY_OF,PEN_0007,DAAS_COMP_0022,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00033,ADMIN_PENALTY_OF,PEN_0008,DAAS_COMP_0022,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00034,ADMIN_PENALTY_OF,PEN_0009,DAAS_COMP_0022,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00035,ADMIN_PENALTY_OF,PEN_0010,DAAS_COMP_0022,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00036,ADMIN_PENALTY_OF,PEN_0011,DAAS_COMP_0023,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder
+DAAS_EVENT_EDGE_00037,ADMIN_PENALTY_OF,PEN_0012,DAAS_COMP_0024,AdminPenalty,Company,event_type=AdminPenalty; label=受到行政处罚; source=shareholder

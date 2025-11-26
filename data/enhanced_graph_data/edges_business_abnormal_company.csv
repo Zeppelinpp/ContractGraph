@@ -1,0 +1,26 @@
+﻿edge_id,edge_type,from_node,to_node,from_type,to_type,properties
+DAAS_EVENT_EDGE_00001,BUSINESS_ABNORMAL_OF,ABN_0001,SUP_015,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=primary
+DAAS_EVENT_EDGE_00002,BUSINESS_ABNORMAL_OF,ABN_0002,SUP_029,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=primary
+DAAS_EVENT_EDGE_00003,BUSINESS_ABNORMAL_OF,ABN_0003,CP_001,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=primary
+DAAS_EVENT_EDGE_00004,BUSINESS_ABNORMAL_OF,ABN_0004,ORG_015,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=primary
+DAAS_EVENT_EDGE_00005,BUSINESS_ABNORMAL_OF,ABN_0005,DAAS_COMP_0001,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00006,BUSINESS_ABNORMAL_OF,ABN_0006,DAAS_COMP_0002,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00007,BUSINESS_ABNORMAL_OF,ABN_0007,DAAS_COMP_0003,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00008,BUSINESS_ABNORMAL_OF,ABN_0008,DAAS_COMP_0004,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00009,BUSINESS_ABNORMAL_OF,ABN_0009,DAAS_COMP_0005,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00010,BUSINESS_ABNORMAL_OF,ABN_0010,DAAS_COMP_0006,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00011,BUSINESS_ABNORMAL_OF,ABN_0011,DAAS_COMP_0007,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00012,BUSINESS_ABNORMAL_OF,ABN_0012,DAAS_COMP_0008,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00013,BUSINESS_ABNORMAL_OF,ABN_0013,DAAS_COMP_0009,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00014,BUSINESS_ABNORMAL_OF,ABN_0014,DAAS_COMP_0010,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00015,BUSINESS_ABNORMAL_OF,ABN_0015,DAAS_COMP_0011,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00016,BUSINESS_ABNORMAL_OF,ABN_0016,DAAS_COMP_0012,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00017,BUSINESS_ABNORMAL_OF,ABN_0017,DAAS_COMP_0013,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00018,BUSINESS_ABNORMAL_OF,ABN_0018,DAAS_COMP_0014,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00019,BUSINESS_ABNORMAL_OF,ABN_0019,DAAS_COMP_0015,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00020,BUSINESS_ABNORMAL_OF,ABN_0020,DAAS_COMP_0016,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00021,BUSINESS_ABNORMAL_OF,ABN_0021,DAAS_COMP_0017,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00022,BUSINESS_ABNORMAL_OF,ABN_0022,DAAS_COMP_0018,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00023,BUSINESS_ABNORMAL_OF,ABN_0023,DAAS_COMP_0019,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00024,BUSINESS_ABNORMAL_OF,ABN_0024,DAAS_COMP_0019,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder
+DAAS_EVENT_EDGE_00025,BUSINESS_ABNORMAL_OF,ABN_0025,DAAS_COMP_0020,BusinessAbnormal,Company,event_type=BusinessAbnormal; label=存在异常经营; source=shareholder

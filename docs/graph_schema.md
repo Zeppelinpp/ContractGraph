@@ -28,20 +28,6 @@
 
 **节点数量**: 165个
 
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS Person (
-    name string,
-    number string,
-    id_card string,
-    gender string,
-    birthday string,
-    status string,
-    email string,
-    phone string
-);
-```
-
 ---
 
 ### 2. Company（公司节点）
@@ -69,19 +55,6 @@ CREATE TAG IF NOT EXISTS Person (
 
 **节点数量**: 114个
 
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS Company (
-    name string,
-    number string,
-    legal_person string,
-    credit_code string,
-    establish_date string,
-    status string,
-    description string
-);
-```
-
 ---
 
 ### 3. Contract（合同节点）
@@ -101,18 +74,6 @@ CREATE TAG IF NOT EXISTS Company (
 **数据来源**: t_mscon_contract_虚拟数据.csv
 
 **节点数量**: 100个
-
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS Contract (
-    contract_no string,
-    contract_name string,
-    amount double,
-    sign_date string,
-    status string,
-    description string
-);
-```
 
 ---
 
@@ -136,19 +97,6 @@ CREATE TAG IF NOT EXISTS Contract (
 - t_conl_disputeregist_虚拟数据.csv (纠纷)
 
 **节点数量**: 20个
-
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS LegalEvent (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-```
 
 ---
 
@@ -177,23 +125,6 @@ CREATE TAG IF NOT EXISTS LegalEvent (
 
 **节点数量**: 60个 (30个INFLOW + 30个OUTFLOW)
 
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS Transaction (
-    transaction_type string,
-    transaction_no string,
-    contract_no string,
-    amount double,
-    transaction_date string,
-    status string,
-    description string,
-    fpaidamount double,
-    ftotalamount double,
-    fbiztimeend string,
-    fperformstatus string
-);
-```
-
 ---
 
 ### 6. AdminPenalty（行政处罚节点）【新增】
@@ -214,19 +145,6 @@ CREATE TAG IF NOT EXISTS Transaction (
 **数据来源**: DaaS 外部数据 - 行政处罚记录
 
 **节点数量**: 12个
-
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS AdminPenalty (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-```
 
 ---
 
@@ -249,19 +167,6 @@ CREATE TAG IF NOT EXISTS AdminPenalty (
 
 **节点数量**: 27个
 
-**Schema定义**:
-```ngql
-CREATE TAG IF NOT EXISTS BusinessAbnormal (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-```
-
 ---
 
 ## 边类型 (Edges)
@@ -280,13 +185,6 @@ CREATE TAG IF NOT EXISTS BusinessAbnormal (
 **数据来源**: 各公司表的FARTIFICIALPERSON字段
 
 **边数量**: 90条
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS LEGAL_PERSON (
-    properties string
-);
-```
 
 **示例**:
 ```ngql
@@ -311,13 +209,6 @@ USER_001 -[:LEGAL_PERSON]-> ORG_001
 
 **边数量**: 15条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS CONTROLS (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 中央建设集团 控股 中建华东分公司
@@ -340,14 +231,6 @@ ORG_001 -[:CONTROLS]-> ORG_002
 **数据来源**: t_mscon_contract的FPARTAID/FPARTBID/FPARTCID/FPARTDID字段
 
 **边数量**: 200条 (PARTY_A: 100条, PARTY_B: 100条)
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS PARTY_A (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_B (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_C (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_D (properties string);
-```
 
 **示例**:
 ```ngql
@@ -374,13 +257,6 @@ SUP_001 -[:PARTY_B]-> CON_001
 
 **边数量**: 200条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS TRADES_WITH (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 中建华东分公司 与 华信建材有限公司 有交易
@@ -404,13 +280,6 @@ properties: "交易金额:5353380.00,合同:HT2024000001"
 **数据来源**: t_conl_case的FOPERATORID字段
 
 **边数量**: 10条
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS INVOLVED_IN (
-    properties string
-);
-```
 
 **示例**:
 ```ngql
@@ -437,13 +306,6 @@ USER_001 -[:INVOLVED_IN]-> CASE_001
 
 **边数量**: 20条 (案件10条 + 纠纷10条)
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS RELATED_TO (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 建材采购合同 关联 合同纠纷案件-1
@@ -466,13 +328,6 @@ CON_001 -[:RELATED_TO]-> CASE_001
 **生成逻辑**: 从合同表中，若乙方类型为bd_supplier，则乙方是甲方的供应商
 
 **边数量**: 43条
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS IS_SUPPLIER (
-    properties string
-);
-```
 
 **示例**:
 ```ngql
@@ -497,13 +352,6 @@ properties: "供应商关系-华信建材有限公司为中建华东分公司提
 **生成逻辑**: 从合同表中，若某方类型为bd_customer，则该方是对方的客户
 
 **边数量**: 73条
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS IS_CUSTOMER (
-    properties string
-);
-```
 
 **示例**:
 ```ngql
@@ -531,13 +379,6 @@ properties: "客户关系-华润置地发展是中天建筑材料的客户"
 
 **边数量**: 60条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS PAYS (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 华信建材有限公司 支付款项
@@ -564,13 +405,6 @@ properties: "付款-中建华东分公司向华信建材有限公司支付"
 
 **边数量**: 60条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS RECEIVES (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 中建华东分公司 收到款项
@@ -580,40 +414,7 @@ properties: "收款-中建华东分公司收到华信建材有限公司付款"
 
 ---
 
-### 11. HAS_PARTY（合同参与方反向边）
-
-**方向**: Contract → Company
-
-**用途**: 表示合同与参与方公司的反向关系，用于风险传导分析
-
-**属性**:
-| 属性名 | 类型 | 说明 |
-|--------|------|------|
-| properties | string | 边属性描述 |
-
-**生成逻辑**: 从 PARTY_A/B/C/D 边自动生成反向边，用于 PageRank 算法中的风险传导
-
-**边数量**: 200条（与 PARTY_A/B/C/D 边一一对应）
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS HAS_PARTY (
-    properties string
-);
-```
-
-**示例**:
-```ngql
--- 建材采购合同 关联 华信建材有限公司
-CON_001 -[:HAS_PARTY]-> SUP_001
-properties: "乙方-华信建材有限公司"
-```
-
-**注意**: 此边类型在数据导入时自动生成，不直接存在于 CSV 文件中
-
----
-
-### 12. EMPLOYED_BY（雇佣关系）【新增】
+### 11. EMPLOYED_BY（雇佣关系）【新增】
 
 **方向**: Person → Company
 
@@ -628,13 +429,6 @@ properties: "乙方-华信建材有限公司"
 
 **边数量**: 80条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS EMPLOYED_BY (
-    properties string
-);
-```
-
 **properties 格式**: `position=董事长; tenure_start=2015-01-08`
 
 **示例**:
@@ -646,7 +440,7 @@ properties: "position=董事长; tenure_start=2015-01-08"
 
 ---
 
-### 13. ADMIN_PENALTY_OF（行政处罚关系）【新增】
+### 12. ADMIN_PENALTY_OF（行政处罚关系）【新增】
 
 **方向**: AdminPenalty → Company
 
@@ -661,13 +455,6 @@ properties: "position=董事长; tenure_start=2015-01-08"
 
 **边数量**: 12条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS ADMIN_PENALTY_OF (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 行政处罚事件 关联 被处罚公司
@@ -677,7 +464,7 @@ properties: "event_type=AdminPenalty; label=受到行政处罚; source=primary"
 
 ---
 
-### 14. BUSINESS_ABNORMAL_OF（经营异常关系）【新增】
+### 13. BUSINESS_ABNORMAL_OF（经营异常关系）【新增】
 
 **方向**: BusinessAbnormal → Company
 
@@ -692,127 +479,11 @@ properties: "event_type=AdminPenalty; label=受到行政处罚; source=primary"
 
 **边数量**: 26条
 
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (
-    properties string
-);
-```
-
 **示例**:
 ```ngql
 -- 经营异常记录 关联 相关公司
 ABN_0001 -[:BUSINESS_ABNORMAL_OF]-> SUP_015
 properties: "event_type=BusinessAbnormal; label=存在异常经营; source=primary"
-```
-
----
-
-## 完整Schema创建脚本
-
-```ngql
--- 创建图空间
-CREATE SPACE IF NOT EXISTS contract_graph (
-    vid_type = FIXED_STRING(64),
-    partition_num = 10,
-    replica_factor = 1
-);
-
-USE contract_graph;
-
--- 创建节点Tag
-CREATE TAG IF NOT EXISTS Person (
-    name string,
-    number string,
-    id_card string,
-    gender string,
-    birthday string,
-    status string,
-    email string,
-    phone string
-);
-
-CREATE TAG IF NOT EXISTS Company (
-    name string,
-    number string,
-    legal_person string,
-    credit_code string,
-    establish_date string,
-    status string,
-    description string
-);
-
-CREATE TAG IF NOT EXISTS Contract (
-    contract_no string,
-    contract_name string,
-    amount double,
-    sign_date string,
-    status string,
-    description string
-);
-
-CREATE TAG IF NOT EXISTS LegalEvent (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-
-CREATE TAG IF NOT EXISTS Transaction (
-    transaction_type string,
-    transaction_no string,
-    contract_no string,
-    amount double,
-    transaction_date string,
-    status string,
-    description string,
-    fpaidamount double,
-    ftotalamount double,
-    fbiztimeend string,
-    fperformstatus string
-);
-
-CREATE TAG IF NOT EXISTS AdminPenalty (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-
-CREATE TAG IF NOT EXISTS BusinessAbnormal (
-    event_type string,
-    event_no string,
-    event_name string,
-    amount double,
-    status string,
-    register_date string,
-    description string
-);
-
--- 创建边Edge
-CREATE EDGE IF NOT EXISTS LEGAL_PERSON (properties string);
-CREATE EDGE IF NOT EXISTS CONTROLS (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_A (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_B (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_C (properties string);
-CREATE EDGE IF NOT EXISTS PARTY_D (properties string);
-CREATE EDGE IF NOT EXISTS TRADES_WITH (properties string);
-CREATE EDGE IF NOT EXISTS INVOLVED_IN (properties string);
-CREATE EDGE IF NOT EXISTS RELATED_TO (properties string);
-CREATE EDGE IF NOT EXISTS IS_SUPPLIER (properties string);
-CREATE EDGE IF NOT EXISTS IS_CUSTOMER (properties string);
-CREATE EDGE IF NOT EXISTS PAYS (properties string);
-CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
-CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
-CREATE EDGE IF NOT EXISTS EMPLOYED_BY (properties string);
-CREATE EDGE IF NOT EXISTS ADMIN_PENALTY_OF (properties string);
-CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 ```
 
 ---
@@ -847,20 +518,19 @@ CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 | IS_CUSTOMER | 73 | 客户关系 |
 | PAYS | 60 | 支付关系 |
 | RECEIVES | 60 | 收款关系 |
-| HAS_PARTY | 200 | 合同参与方反向边 |
 | EMPLOYED_BY | 80 | 雇佣关系【新增】 |
 | ADMIN_PENALTY_OF | 12 | 行政处罚关系【新增】 |
 | BUSINESS_ABNORMAL_OF | 26 | 经营异常关系【新增】 |
-| **总计** | **1089** | |
+| **总计** | **889** | |
 
 ---
 
 ## 业务场景支持
 
 ### 1. 法律事件风险传导
-**路径**: Person → LEGAL_PERSON → Company → CONTROLS → Company → PARTY_A/B → Contract → HAS_PARTY → Company
+**路径**: Person → LEGAL_PERSON → Company → CONTROLS → Company → PARTY_A/B → Contract → RELATED_TO → LegalEvent
 
-**用途**: 追踪法人代表涉及法律事件后，风险如何通过控股关系和合同关系传导到交易对手。使用 HAS_PARTY 反向边实现合同风险向参与方的传导。
+**用途**: 追踪法人代表涉及法律事件后，风险如何通过控股关系和合同关系传导到交易对手。
 
 ### 2. 循环交易检测
 **路径**: Company → TRADES_WITH → Company → TRADES_WITH → Company → ... → Company (形成闭环)
@@ -878,9 +548,9 @@ CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 **用途**: 追踪实际资金流向，验证合同履约情况
 
 ### 5. 风险传导分析（FraudRank）
-**路径**: LegalEvent → RELATED_TO → Contract → HAS_PARTY → Company → [多种关系] → Company
+**路径**: LegalEvent → RELATED_TO → Contract → PARTY_A/B → Company → [多种关系] → Company
 
-**用途**: 通过 PageRank 算法，将法律事件风险通过合同关系（HAS_PARTY）传导到公司，再通过控股、交易等关系进一步传导
+**用途**: 通过 PageRank 算法，将法律事件风险通过合同关系传导到公司，再通过控股、交易等关系进一步传导
 
 ### 6. 外部风险事件分析【新增】
 **路径**: AdminPenalty/BusinessAbnormal → ADMIN_PENALTY_OF/BUSINESS_ABNORMAL_OF → Company → [多种关系] → Company
@@ -909,7 +579,6 @@ CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 - 新增Transaction节点类型
 - 新增IS_SUPPLIER、IS_CUSTOMER关系边
 - 新增PAYS、RECEIVES关系边
-- 新增HAS_PARTY反向边（用于风险传导分析）
 - 通过关系边表达公司类型，而非节点属性
 - Person节点新增email、phone字段
 
@@ -946,28 +615,6 @@ CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 - `edges_employment.csv` (80行) 【新增】
 - `edges_admin_penalty_company.csv` (12行) 【新增】
 - `edges_business_abnormal_company.csv` (26行) 【新增】
-
-**注意**: `HAS_PARTY` 边在导入时自动从 `PARTY_A/B/C/D` 边生成，不单独存在于 CSV 文件中
-
----
-
-## 数据导入
-
-使用提供的导入脚本：
-
-```bash
-# 设置环境变量
-export NEBULA_ADDRESS="172.18.53.63:9669"
-export NEBULA_USERNAME="root"
-export NEBULA_PASSWORD="nebula"
-export NEBULA_SPACE="contract_graph"
-
-# 运行导入脚本（使用 enhanced_graph_data）
-uv run python src/scripts/nebula_import.py --data-dir enhanced_graph_data
-
-# 或使用默认 graph_data
-uv run python src/scripts/nebula_import.py
-```
 
 ---
 

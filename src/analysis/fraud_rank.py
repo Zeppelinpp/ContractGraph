@@ -78,7 +78,7 @@ def load_weighted_graph(session, use_embedding_weights=True):
         }
     """
     graph = {"nodes": set(), "edges": defaultdict(list), "out_degree": defaultdict(int)}
-    
+
     # 如果使用 embedding 权重，预先计算所有边的权重
     embedding_weights = {}
     if use_embedding_weights:
@@ -225,19 +225,27 @@ def load_weighted_graph(session, use_embedding_weights=True):
             graph["out_degree"][from_node] += 1
 
     # 查询 PARTY_A 和 PARTY_B 边（Company -> Contract）
+    # 修改说明：为了让风险从 Contract 传导给 Company，这里需要反向构建边
     party_query = """
     MATCH (c:Company)-[e:PARTY_A|PARTY_B]->(con:Contract)
-    RETURN id(c) as from_node, id(con) as to_node, type(e) as edge_type
+    RETURN id(c) as company_id, id(con) as contract_id, type(e) as edge_type
     """
     rows = execute_query(session, party_query)
     for row in rows:
-        from_node = row.get("from_node", "")
-        to_node = row.get("to_node", "")
+        company_id = row.get("company_id", "")
+        contract_id = row.get("contract_id", "")
         edge_type = row.get("edge_type", "")
-        if from_node and to_node:
-            weight = embedding_weights.get((from_node, to_node))
+        if company_id and contract_id:
+            # 注意：这里我们将 Contract 作为源节点，Company 作为目标节点
+            from_node = contract_id
+            to_node = company_id
+
+            weight = embedding_weights.get(
+                (company_id, contract_id)
+            )  # 权重查询可能需要保持原方向或重新计算
             if weight is None:
-                weight = EDGE_WEIGHTS.get(edge_type, 0.3)
+                weight = EDGE_WEIGHTS.get(edge_type, 0.5)  # 建议适当提高此处的传导权重
+
             graph["nodes"].add(from_node)
             graph["nodes"].add(to_node)
             graph["edges"][from_node].append((to_node, weight))
@@ -252,7 +260,7 @@ def initialize_risk_seeds(session):
     """
     init_scores = defaultdict(float)
 
-    # 查询合同关联的法律事件
+    # 查询合同关联的法律事件，直接给合同分配初始风险
     contract_event_query = """
     MATCH (con:Contract)-[:RELATED_TO]->(le:LegalEvent)
     RETURN id(con) as contract_id, id(le) as event_id,
@@ -262,22 +270,7 @@ def initialize_risk_seeds(session):
     """
     contract_events = execute_query(session, contract_event_query)
 
-    # 查询合同的公司关系（甲方/乙方）
-    contract_companies_query = """
-    MATCH (c:Company)-[:PARTY_A|PARTY_B]->(con:Contract)
-    RETURN id(con) as contract_id, id(c) as company_id
-    """
-    contract_companies = execute_query(session, contract_companies_query)
-
-    # 构建合同 -> 公司映射
-    contract_to_companies = defaultdict(list)
-    for row in contract_companies:
-        contract_id = row.get("contract_id", "")
-        company_id = row.get("company_id", "")
-        if contract_id and company_id:
-            contract_to_companies[contract_id].append(company_id)
-
-    # 计算初始分数
+    # 给合同分配初始风险分数
     for row in contract_events:
         contract_id = row.get("contract_id", "")
         event_id = row.get("event_id", "")
@@ -287,11 +280,9 @@ def initialize_risk_seeds(session):
 
         if contract_id and event_id:
             event = {"event_type": event_type, "amount": amount, "status": status}
-            base_score = calculate_init_score(None, [event])
-
-            # 将风险分配给该合同的甲乙方
-            for company_id in contract_to_companies.get(contract_id, []):
-                init_scores[company_id] = max(init_scores[company_id], base_score)
+            contract_score = calculate_init_score(None, [event])
+            # 合同可能关联多个法律事件，取最大值
+            init_scores[contract_id] = max(init_scores[contract_id], contract_score)
 
     return dict(init_scores)
 

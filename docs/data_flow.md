@@ -54,14 +54,20 @@
 │  │   graph_data/        │           │  enhanced_graph_data/     │  │
 │  │  ├─ nodes_person.csv │           │  ├─ nodes_person.csv      │  │
 │  │  ├─ nodes_company.csv│           │  ├─ nodes_company.csv     │  │
-│  │  ├─ nodes_contract.csv│           │  ├─ nodes_contract.csv     │  │
-│  │  ├─ nodes_transaction.csv│        │  ├─ nodes_transaction.csv│  │
+│  │  ├─ nodes_contract.csv│          │  ├─ nodes_contract.csv    │  │
+│  │  ├─ nodes_transaction.csv│       │  ├─ nodes_transaction.csv │  │
+│  │  ├─ nodes_legal_event.csv│       │  ├─ nodes_legal_event.csv │  │
+│  │  │                    │           │  ├─ nodes_admin_penalty.csv│ │
+│  │  │                    │           │  ├─ nodes_business_abnormal│ │
 │  │  ├─ edges_legal_*    │           │  ├─ edges_legal_*          │  │
 │  │  ├─ edges_party.csv  │           │  ├─ edges_party.csv        │  │
-│  │  ├─ edges_controls.csv│           │  ├─ edges_controls.csv     │  │
+│  │  ├─ edges_controls.csv│          │  ├─ edges_controls.csv     │  │
+│  │  │                    │           │  ├─ edges_employment.csv   │  │
+│  │  │                    │           │  ├─ edges_admin_penalty_*  │  │
+│  │  │                    │           │  ├─ edges_business_abnormal│  │
 │  │  └─ ...              │           │  └─ ...                    │  │
 │  │                      │           │                            │  │
-│  │  356 节点, 671 边    │           │  435 节点, 673 边          │  │
+│  │  356 节点, 671 边    │           │  507 节点, 873 边          │  │
 │  └──────────────────────┘           └───────────────────────────┘  │
 │             │                                      │                │
 │             └──────────────┬───────────────────────┘                │
@@ -101,24 +107,29 @@
 │  │  Graph Space: contract_graph                                │    │
 │  │                                                              │    │
 │  │  Tags (节点类型):                                            │    │
-│  │    • Person      - 人员 (165个)                             │    │
-│  │    • Company     - 公司 (90个)                              │    │
-│  │    • Contract    - 合同 (100个)                            │    │
-│  │    • LegalEvent  - 法律事件 (20个)                         │    │
-│  │    • Transaction - 交易 (60个)                             │    │
+│  │    • Person           - 人员 (165个)                        │    │
+│  │    • Company          - 公司 (114个)                        │    │
+│  │    • Contract         - 合同 (100个)                        │    │
+│  │    • LegalEvent       - 法律事件 (20个)                     │    │
+│  │    • Transaction      - 交易 (60个)                         │    │
+│  │    • AdminPenalty     - 行政处罚 (12个) 【新增】            │    │
+│  │    • BusinessAbnormal - 经营异常 (27个) 【新增】            │    │
 │  │                                                              │    │
 │  │  Edges (关系类型):                                           │    │
-│  │    • LEGAL_PERSON    - 法人关系 (90条)                      │    │
-│  │    • CONTROLS        - 控股关系 (15条)                      │    │
-│  │    • PARTY_A/B/C/D   - 合同参与方 (200条)                   │    │
-│  │    • TRADES_WITH     - 交易关系 (100条)                     │    │
-│  │    • IS_SUPPLIER     - 供应商关系 (43条)                    │    │
-│  │    • IS_CUSTOMER     - 客户关系 (73条)                      │    │
-│  │    • PAYS            - 支付关系 (60条)                     │    │
-│  │    • RECEIVES         - 收款关系 (60条)                     │    │
-│  │    • INVOLVED_IN      - 参与事件 (10条)                     │    │
-│  │    • RELATED_TO       - 关联关系 (20条)                     │    │
-│  │    • HAS_PARTY        - 合同参与方反向边 (200条)            │    │
+│  │    • LEGAL_PERSON       - 法人关系 (90条)                   │    │
+│  │    • CONTROLS           - 控股关系 (15条)                   │    │
+│  │    • PARTY_A/B/C/D      - 合同参与方 (200条)                │    │
+│  │    • TRADES_WITH        - 交易关系 (200条)                  │    │
+│  │    • IS_SUPPLIER        - 供应商关系 (43条)                 │    │
+│  │    • IS_CUSTOMER        - 客户关系 (73条)                   │    │
+│  │    • PAYS               - 支付关系 (60条)                   │    │
+│  │    • RECEIVES           - 收款关系 (60条)                   │    │
+│  │    • INVOLVED_IN        - 参与事件 (10条)                   │    │
+│  │    • RELATED_TO         - 关联关系 (20条)                   │    │
+│  │    • HAS_PARTY          - 合同参与方反向边 (200条)          │    │
+│  │    • EMPLOYED_BY        - 雇佣关系 (80条) 【新增】          │    │
+│  │    • ADMIN_PENALTY_OF   - 行政处罚关系 (12条) 【新增】      │    │
+│  │    • BUSINESS_ABNORMAL_OF - 经营异常关系 (26条) 【新增】    │    │
 │  └────────────────────────────────────────────────────────────┘    │
 │                              │                                       │
 └──────────────────────────────┼───────────────────────────────────────┘
@@ -214,10 +225,10 @@ t_mscon_contract_虚拟数据.csv              nodes_contract.csv
 |------|------------|---------------------|
 | **数据源** | mock_data | enhanced_mock_data |
 | **生成脚本** | generate_graph_data.py | generate_enhanced_graph_data.py |
-| **节点数** | 356 | 435 |
-| **边数** | 671 | 673 |
+| **节点数** | 356 | 507 |
+| **边数** | 671 | 873 |
 | **适用场景** | 开发测试 | 生产演示 |
-| **业务覆盖** | 基础场景 | 完整场景 |
+| **业务覆盖** | 基础场景 | 完整场景（含风险事件） |
 
 ## 关键路径
 
@@ -255,13 +266,14 @@ contract-graph/
 │   │                             │  数据生成
 │   └── enhanced_graph_data/    ◄─┘
 │       └─► 增强图格式 CSV        │
+│           (含风险事件数据)       │
 │                                 │
 │                                 │  数据导入
 │                                 ▼
 └── [Nebula Graph]
     └─► contract_graph (Space)
-        ├─► Tags (5 types)
-        └─► Edges (10 types)
+        ├─► Tags (7 types)
+        └─► Edges (14 types)
 ```
 
 ## 使用决策树
@@ -318,3 +330,10 @@ contract-graph/
 - 在 PageRank 算法中，允许风险从合同节点传导到公司节点
 - 支持合同风险向参与方的直接传导路径
 
+### 新增风险事件数据
+
+enhanced_graph_data 新增了以下风险事件数据：
+
+1. **AdminPenalty（行政处罚）**：来自 DaaS 外部数据，记录企业受到的行政处罚
+2. **BusinessAbnormal（经营异常）**：来自 DaaS 外部数据，记录企业的经营异常状态
+3. **EMPLOYED_BY（雇佣关系）**：记录人员在公司的任职信息，包含职位和任职时间

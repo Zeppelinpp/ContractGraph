@@ -67,7 +67,7 @@ CREATE TAG IF NOT EXISTS Person (
 - t_bd_customer_虚拟数据.csv (客户)
 - t_mscon_counterpart_虚拟数据.csv (相对方)
 
-**节点数量**: 90个
+**节点数量**: 114个
 
 **Schema定义**:
 ```ngql
@@ -152,7 +152,7 @@ CREATE TAG IF NOT EXISTS LegalEvent (
 
 ---
 
-### 5. Transaction（交易节点）【新增】
+### 5. Transaction（交易节点）
 
 **用途**: 表示交易流水实体，记录公司间的实际资金流动
 
@@ -191,6 +191,74 @@ CREATE TAG IF NOT EXISTS Transaction (
     ftotalamount double,
     fbiztimeend string,
     fperformstatus string
+);
+```
+
+---
+
+### 6. AdminPenalty（行政处罚节点）【新增】
+
+**用途**: 表示企业受到的行政处罚事件，来自 DaaS 外部数据
+
+**属性**:
+| 属性名 | 类型 | 说明 | 示例 |
+|--------|------|------|------|
+| event_type | string | 事件类型 | AdminPenalty |
+| event_no | string | 处罚文号 | 中国证券监督管理委员会广东监管局行政处罚决定书〔2023〕20号 |
+| event_name | string | 处罚名称 | 行政处罚 |
+| amount | double | 处罚金额 | 48000.0 |
+| status | string | 状态 | C:已完成 |
+| register_date | string | 处罚日期 | 2023-09-27 |
+| description | string | 详细描述 | 包含违法类型、违法事实、处罚内容、处罚依据等 |
+
+**数据来源**: DaaS 外部数据 - 行政处罚记录
+
+**节点数量**: 12个
+
+**Schema定义**:
+```ngql
+CREATE TAG IF NOT EXISTS AdminPenalty (
+    event_type string,
+    event_no string,
+    event_name string,
+    amount double,
+    status string,
+    register_date string,
+    description string
+);
+```
+
+---
+
+### 7. BusinessAbnormal（经营异常节点）【新增】
+
+**用途**: 表示企业的经营异常状态，来自 DaaS 外部数据
+
+**属性**:
+| 属性名 | 类型 | 说明 | 示例 |
+|--------|------|------|------|
+| event_type | string | 事件类型 | BusinessAbnormal |
+| event_no | string | 记录编号 | 56498534 |
+| event_name | string | 记录名称 | 3643a510ab02472ef9da14b77c8b55a1 |
+| amount | double | 金额（通常为0） | 0.0 |
+| status | string | 状态 | C:已移出 |
+| register_date | string | 列入日期 | 2017-07-07 |
+| description | string | 详细描述 | 包含列入原因、列入机关、移出原因、移出机关、移出日期等 |
+
+**数据来源**: DaaS 外部数据 - 经营异常名录
+
+**节点数量**: 27个
+
+**Schema定义**:
+```ngql
+CREATE TAG IF NOT EXISTS BusinessAbnormal (
+    event_type string,
+    event_no string,
+    event_name string,
+    amount double,
+    status string,
+    register_date string,
+    description string
 );
 ```
 
@@ -304,7 +372,7 @@ SUP_001 -[:PARTY_B]-> CON_001
 
 **数据来源**: 从合同表推导（甲方 → 乙方）
 
-**边数量**: 100条
+**边数量**: 200条
 
 **Schema定义**:
 ```ngql
@@ -369,41 +437,6 @@ USER_001 -[:INVOLVED_IN]-> CASE_001
 
 **边数量**: 20条 (案件10条 + 纠纷10条)
 
----
-
-### 11. HAS_PARTY（合同参与方反向边）【新增】
-
-**方向**: Contract → Company
-
-**用途**: 表示合同与参与方公司的反向关系，用于风险传导分析
-
-**属性**:
-| 属性名 | 类型 | 说明 |
-|--------|------|------|
-| properties | string | 边属性描述 |
-
-**生成逻辑**: 从 PARTY_A/B/C/D 边自动生成反向边，用于 PageRank 算法中的风险传导
-
-**边数量**: 200条（与 PARTY_A/B/C/D 边一一对应）
-
-**Schema定义**:
-```ngql
-CREATE EDGE IF NOT EXISTS HAS_PARTY (
-    properties string
-);
-```
-
-**示例**:
-```ngql
--- 建材采购合同 关联 华信建材有限公司
-CON_001 -[:HAS_PARTY]-> SUP_001
-properties: "乙方-华信建材有限公司"
-```
-
-**注意**: 此边类型在数据导入时自动生成，不直接存在于 CSV 文件中
-
----
-
 **Schema定义**:
 ```ngql
 CREATE EDGE IF NOT EXISTS RELATED_TO (
@@ -419,7 +452,7 @@ CON_001 -[:RELATED_TO]-> CASE_001
 
 ---
 
-### 7. IS_SUPPLIER（供应商关系）【新增】
+### 7. IS_SUPPLIER（供应商关系）
 
 **方向**: Company → Company
 
@@ -450,7 +483,7 @@ properties: "供应商关系-华信建材有限公司为中建华东分公司提
 
 ---
 
-### 8. IS_CUSTOMER（客户关系）【新增】
+### 8. IS_CUSTOMER（客户关系）
 
 **方向**: Company → Company
 
@@ -481,7 +514,7 @@ properties: "客户关系-华润置地发展是中天建筑材料的客户"
 
 ---
 
-### 9. PAYS（支付关系）【新增】
+### 9. PAYS（支付关系）
 
 **方向**: Company → Transaction
 
@@ -514,7 +547,7 @@ properties: "付款-中建华东分公司向华信建材有限公司支付"
 
 ---
 
-### 10. RECEIVES（收款关系）【新增】
+### 10. RECEIVES（收款关系）
 
 **方向**: Transaction → Company
 
@@ -547,17 +580,145 @@ properties: "收款-中建华东分公司收到华信建材有限公司付款"
 
 ---
 
+### 11. HAS_PARTY（合同参与方反向边）
+
+**方向**: Contract → Company
+
+**用途**: 表示合同与参与方公司的反向关系，用于风险传导分析
+
+**属性**:
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| properties | string | 边属性描述 |
+
+**生成逻辑**: 从 PARTY_A/B/C/D 边自动生成反向边，用于 PageRank 算法中的风险传导
+
+**边数量**: 200条（与 PARTY_A/B/C/D 边一一对应）
+
+**Schema定义**:
+```ngql
+CREATE EDGE IF NOT EXISTS HAS_PARTY (
+    properties string
+);
+```
+
+**示例**:
+```ngql
+-- 建材采购合同 关联 华信建材有限公司
+CON_001 -[:HAS_PARTY]-> SUP_001
+properties: "乙方-华信建材有限公司"
+```
+
+**注意**: 此边类型在数据导入时自动生成，不直接存在于 CSV 文件中
+
+---
+
+### 12. EMPLOYED_BY（雇佣关系）【新增】
+
+**方向**: Person → Company
+
+**用途**: 表示人员在公司的任职关系
+
+**属性**:
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| properties | string | 包含职位和任职时间信息 |
+
+**数据来源**: edges_employment.csv
+
+**边数量**: 80条
+
+**Schema定义**:
+```ngql
+CREATE EDGE IF NOT EXISTS EMPLOYED_BY (
+    properties string
+);
+```
+
+**properties 格式**: `position=董事长; tenure_start=2015-01-08`
+
+**示例**:
+```ngql
+-- 张伟 在 中央建设集团有限公司 任职
+USER_001 -[:EMPLOYED_BY]-> ORG_001
+properties: "position=董事长; tenure_start=2015-01-08"
+```
+
+---
+
+### 13. ADMIN_PENALTY_OF（行政处罚关系）【新增】
+
+**方向**: AdminPenalty → Company
+
+**用途**: 表示行政处罚事件与被处罚公司的关系
+
+**属性**:
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| properties | string | 处罚关系描述 |
+
+**数据来源**: DaaS 外部数据 - edges_admin_penalty_company.csv
+
+**边数量**: 12条
+
+**Schema定义**:
+```ngql
+CREATE EDGE IF NOT EXISTS ADMIN_PENALTY_OF (
+    properties string
+);
+```
+
+**示例**:
+```ngql
+-- 行政处罚事件 关联 被处罚公司
+PEN_0001 -[:ADMIN_PENALTY_OF]-> CUS_020
+properties: "event_type=AdminPenalty; label=受到行政处罚; source=primary"
+```
+
+---
+
+### 14. BUSINESS_ABNORMAL_OF（经营异常关系）【新增】
+
+**方向**: BusinessAbnormal → Company
+
+**用途**: 表示经营异常记录与相关公司的关系
+
+**属性**:
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| properties | string | 异常关系描述 |
+
+**数据来源**: DaaS 外部数据 - edges_business_abnormal_company.csv
+
+**边数量**: 26条
+
+**Schema定义**:
+```ngql
+CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (
+    properties string
+);
+```
+
+**示例**:
+```ngql
+-- 经营异常记录 关联 相关公司
+ABN_0001 -[:BUSINESS_ABNORMAL_OF]-> SUP_015
+properties: "event_type=BusinessAbnormal; label=存在异常经营; source=primary"
+```
+
+---
+
 ## 完整Schema创建脚本
 
 ```ngql
 -- 创建图空间
-CREATE SPACE IF NOT EXISTS contract_1117 (
+CREATE SPACE IF NOT EXISTS contract_graph (
     vid_type = FIXED_STRING(64),
     partition_num = 10,
     replica_factor = 1
 );
 
-USE contract_1117;
+USE contract_graph;
 
 -- 创建节点Tag
 CREATE TAG IF NOT EXISTS Person (
@@ -614,6 +775,26 @@ CREATE TAG IF NOT EXISTS Transaction (
     fperformstatus string
 );
 
+CREATE TAG IF NOT EXISTS AdminPenalty (
+    event_type string,
+    event_no string,
+    event_name string,
+    amount double,
+    status string,
+    register_date string,
+    description string
+);
+
+CREATE TAG IF NOT EXISTS BusinessAbnormal (
+    event_type string,
+    event_no string,
+    event_name string,
+    amount double,
+    status string,
+    register_date string,
+    description string
+);
+
 -- 创建边Edge
 CREATE EDGE IF NOT EXISTS LEGAL_PERSON (properties string);
 CREATE EDGE IF NOT EXISTS CONTROLS (properties string);
@@ -629,6 +810,9 @@ CREATE EDGE IF NOT EXISTS IS_CUSTOMER (properties string);
 CREATE EDGE IF NOT EXISTS PAYS (properties string);
 CREATE EDGE IF NOT EXISTS RECEIVES (properties string);
 CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
+CREATE EDGE IF NOT EXISTS EMPLOYED_BY (properties string);
+CREATE EDGE IF NOT EXISTS ADMIN_PENALTY_OF (properties string);
+CREATE EDGE IF NOT EXISTS BUSINESS_ABNORMAL_OF (properties string);
 ```
 
 ---
@@ -639,11 +823,13 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 | 节点类型 | 数量 | 说明 |
 |---------|------|------|
 | Person | 165 | 人员节点 |
-| Company | 90 | 公司节点 |
+| Company | 114 | 公司节点 |
 | Contract | 100 | 合同节点 |
 | LegalEvent | 20 | 法律事件节点 |
 | Transaction | 60 | 交易节点 |
-| **总计** | **435** | |
+| AdminPenalty | 12 | 行政处罚节点【新增】 |
+| BusinessAbnormal | 27 | 经营异常节点【新增】 |
+| **总计** | **498** | |
 
 ### 边统计
 | 边类型 | 数量 | 说明 |
@@ -654,7 +840,7 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 | PARTY_B | 100 | 合同乙方 |
 | PARTY_C | 0 | 合同丙方 |
 | PARTY_D | 0 | 合同丁方 |
-| TRADES_WITH | 100 | 交易关系 |
+| TRADES_WITH | 200 | 交易关系 |
 | INVOLVED_IN | 10 | 涉及法律事件 |
 | RELATED_TO | 20 | 关联法律事件 |
 | IS_SUPPLIER | 43 | 供应商关系 |
@@ -662,7 +848,10 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 | PAYS | 60 | 支付关系 |
 | RECEIVES | 60 | 收款关系 |
 | HAS_PARTY | 200 | 合同参与方反向边 |
-| **总计** | **871** | |
+| EMPLOYED_BY | 80 | 雇佣关系【新增】 |
+| ADMIN_PENALTY_OF | 12 | 行政处罚关系【新增】 |
+| BUSINESS_ABNORMAL_OF | 26 | 经营异常关系【新增】 |
+| **总计** | **1089** | |
 
 ---
 
@@ -693,11 +882,29 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 
 **用途**: 通过 PageRank 算法，将法律事件风险通过合同关系（HAS_PARTY）传导到公司，再通过控股、交易等关系进一步传导
 
+### 6. 外部风险事件分析【新增】
+**路径**: AdminPenalty/BusinessAbnormal → ADMIN_PENALTY_OF/BUSINESS_ABNORMAL_OF → Company → [多种关系] → Company
+
+**用途**: 将 DaaS 外部数据中的行政处罚、经营异常等风险事件关联到企业，分析风险传导
+
+### 7. 人员任职网络分析【新增】
+**路径**: Person → EMPLOYED_BY → Company → CONTROLS → Company
+
+**用途**: 分析人员在多家公司的任职情况，识别关联方关系
+
 ---
 
 ## Schema版本历史
 
-### v2.0 (当前版本)
+### v3.0 (当前版本)
+- 新增 AdminPenalty 节点类型（行政处罚）
+- 新增 BusinessAbnormal 节点类型（经营异常）
+- 新增 EMPLOYED_BY 边类型（雇佣关系，含职位和任职时间）
+- 新增 ADMIN_PENALTY_OF 边类型（行政处罚关系）
+- 新增 BUSINESS_ABNORMAL_OF 边类型（经营异常关系）
+- 支持 DaaS 外部风险数据导入
+
+### v2.0
 - 移除Company.company_type属性
 - 新增Transaction节点类型
 - 新增IS_SUPPLIER、IS_CUSTOMER关系边
@@ -717,23 +924,28 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 ## 数据文件清单
 
 ### 节点文件
-- `nodes_person.csv` (165行，包含header)
-- `nodes_company.csv` (90行，包含header)
-- `nodes_contract.csv` (100行，包含header)
-- `nodes_legal_event.csv` (20行，包含header)
-- `nodes_transaction.csv` (60行，包含header)
+- `nodes_person.csv` (165行)
+- `nodes_company.csv` (114行)
+- `nodes_contract.csv` (100行)
+- `nodes_legal_event.csv` (20行)
+- `nodes_transaction.csv` (60行)
+- `nodes_admin_penalty.csv` (12行) 【新增】
+- `nodes_business_abnormal.csv` (27行) 【新增】
 
 ### 边文件
-- `edges_legal_person.csv` (90行，包含header)
-- `edges_controls.csv` (15行，包含header)
-- `edges_party.csv` (200行，包含header)
-- `edges_trades_with.csv` (100行，包含header)
-- `edges_case_person.csv` (10行，包含header)
-- `edges_case_contract.csv` (10行，包含header)
-- `edges_dispute_contract.csv` (10行，包含header)
-- `edges_is_supplier.csv` (43行，包含header)
-- `edges_is_customer.csv` (73行，包含header)
-- `edges_company_transaction.csv` (120行，包含header)
+- `edges_legal_person.csv` (90行)
+- `edges_controls.csv` (15行)
+- `edges_party.csv` (200行)
+- `edges_trades_with.csv` (200行)
+- `edges_case_person.csv` (10行)
+- `edges_case_contract.csv` (10行)
+- `edges_dispute_contract.csv` (10行)
+- `edges_is_supplier.csv` (43行)
+- `edges_is_customer.csv` (73行)
+- `edges_company_transaction.csv` (120行)
+- `edges_employment.csv` (80行) 【新增】
+- `edges_admin_penalty_company.csv` (12行) 【新增】
+- `edges_business_abnormal_company.csv` (26行) 【新增】
 
 **注意**: `HAS_PARTY` 边在导入时自动从 `PARTY_A/B/C/D` 边生成，不单独存在于 CSV 文件中
 
@@ -748,7 +960,7 @@ CREATE EDGE IF NOT EXISTS HAS_PARTY (properties string);
 export NEBULA_ADDRESS="172.18.53.63:9669"
 export NEBULA_USERNAME="root"
 export NEBULA_PASSWORD="nebula"
-export NEBULA_SPACE="contract_1117"
+export NEBULA_SPACE="contract_graph"
 
 # 运行导入脚本（使用 enhanced_graph_data）
 uv run python src/scripts/nebula_import.py --data-dir enhanced_graph_data
@@ -761,8 +973,6 @@ uv run python src/scripts/nebula_import.py
 
 ## 相关文档
 
-- [知识图谱设计方案](./03_知识图谱设计.md)
-- [字段筛选说明](./02_字段筛选说明.md)
-- [Web Demo使用说明](./WebDemo使用说明.md)
+- [数据流图](./data_flow.md)
+- [分析场景说明](./analysis_scenarios.md)
 - [原型系统说明文档](./原型系统说明文档.md)
-

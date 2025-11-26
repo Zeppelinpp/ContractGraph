@@ -110,6 +110,70 @@
 
 ---
 
+## 场景六：外部风险事件分析【新增】
+
+### 功能描述
+整合 DaaS 外部数据中的行政处罚、经营异常等风险事件，分析这些风险事件对企业及其关联方的影响。
+
+### 数据来源
+- **AdminPenalty（行政处罚）**：来自工商、证监、市场监管等部门的行政处罚记录
+- **BusinessAbnormal（经营异常）**：企业经营异常名录，包括未年报、地址异常等
+
+### 核心指标
+- **行政处罚**：
+  - 处罚次数
+  - 处罚金额
+  - 处罚类型（证监局处罚、市场监管处罚等）
+  - 处罚时间
+- **经营异常**：
+  - 异常次数
+  - 列入原因（未年报、地址异常、信息隐瞒等）
+  - 是否已移出
+  - 异常持续时间
+
+### 风险传导路径
+```
+AdminPenalty/BusinessAbnormal → Company → CONTROLS → Company
+                              → Company → TRADES_WITH → Company
+                              → Company → IS_SUPPLIER → Company
+```
+
+### 应用场景
+1. **供应商风险评估**：评估供应商是否有行政处罚或经营异常记录
+2. **客户风险评估**：评估客户的信用状况
+3. **关联方风险传导**：分析风险事件如何通过控股、交易关系传导
+
+---
+
+## 场景七：人员任职网络分析【新增】
+
+### 功能描述
+分析人员在多家公司的任职情况，识别通过共同任职人员形成的关联方网络。
+
+### 数据来源
+- **EMPLOYED_BY 边**：记录人员在公司的任职关系
+  - 职位（position）：董事长、总经理、监事、财务总监等
+  - 任职开始时间（tenure_start）
+
+### 核心指标
+- **交叉任职**：同一人员在多家公司任职
+- **高管重叠**：多家公司共享相同高管
+- **任职时间重叠**：在同一时期在多家公司任职
+
+### 风险识别
+1. **关联交易识别**：共同高管的公司之间的交易
+2. **利益冲突检测**：在竞争对手公司同时任职
+3. **空壳公司网络**：通过任职关系识别空壳公司网络
+
+### 分析路径
+```
+Person → EMPLOYED_BY → Company A
+Person → EMPLOYED_BY → Company B
+→ Company A 和 Company B 形成关联方关系
+```
+
+---
+
 ## 运行方式
 
 ### 单独运行
@@ -150,3 +214,35 @@ uv run python -m src.analysis.perform_risk
 - `collusion_network_report.csv` - 串通网络分析报告
 - `perform_risk_report.csv` - 履约风险检测报告
 
+---
+
+## 图谱数据支持
+
+### 节点类型（7种）
+| 节点类型 | 数量 | 说明 |
+|---------|------|------|
+| Person | 165 | 人员 |
+| Company | 114 | 公司 |
+| Contract | 100 | 合同 |
+| LegalEvent | 20 | 法律事件 |
+| Transaction | 60 | 交易 |
+| AdminPenalty | 12 | 行政处罚【新增】 |
+| BusinessAbnormal | 27 | 经营异常【新增】 |
+
+### 边类型（17种）
+| 边类型 | 数量 | 说明 |
+|--------|------|------|
+| LEGAL_PERSON | 90 | 法人代表 |
+| CONTROLS | 15 | 控股 |
+| PARTY_A/B/C/D | 200 | 合同参与方 |
+| TRADES_WITH | 200 | 交易 |
+| IS_SUPPLIER | 43 | 供应商 |
+| IS_CUSTOMER | 73 | 客户 |
+| PAYS | 60 | 支付 |
+| RECEIVES | 60 | 收款 |
+| INVOLVED_IN | 10 | 涉及事件 |
+| RELATED_TO | 20 | 关联事件 |
+| HAS_PARTY | 200 | 合同参与方反向 |
+| EMPLOYED_BY | 80 | 雇佣【新增】 |
+| ADMIN_PENALTY_OF | 12 | 行政处罚【新增】 |
+| BUSINESS_ABNORMAL_OF | 26 | 经营异常【新增】 |

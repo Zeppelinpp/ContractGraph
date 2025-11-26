@@ -12,3 +12,4 @@ wheels/
 reports/
 data/local_data/
 .DS_Store
+cache/

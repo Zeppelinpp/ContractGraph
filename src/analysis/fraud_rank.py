@@ -8,10 +8,11 @@ import os
 import pandas as pd
 from collections import defaultdict
 from src.utils.nebula_utils import get_nebula_session, execute_query
-from src.utils.embedding import compute_edge_weights
+from src.utils.embedding import get_or_compute_edge_weights
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
 
 # 边权重设计（基于业务逻辑）
 EDGE_WEIGHTS = {
@@ -62,13 +63,14 @@ def calculate_init_score(company_id, legal_events):
     return min(score, 1.0)
 
 
-def load_weighted_graph(session, use_embedding_weights=True):
+def load_weighted_graph(session, use_embedding_weights=True, force_recompute=False):
     """
     从 Nebula Graph 加载图数据并构建加权邻接表
 
     Args:
         session: Nebula Graph session
         use_embedding_weights: 是否使用 embedding 计算的动态权重，默认 True
+        force_recompute: 是否强制重新计算 embedding 权重
 
     Returns:
         dict: {
@@ -79,12 +81,17 @@ def load_weighted_graph(session, use_embedding_weights=True):
     """
     graph = {"nodes": set(), "edges": defaultdict(list), "out_degree": defaultdict(int)}
 
-    # 如果使用 embedding 权重，预先计算所有边的权重
+    # 如果使用 embedding 权重，从缓存加载或计算
     embedding_weights = {}
     if use_embedding_weights:
-        print("  计算 embedding 边权重...")
-        embedding_weights = compute_edge_weights(session=session, limit=10000)
-        print(f"  已计算 {len(embedding_weights)} 条边的动态权重")
+        print("  加载/计算 embedding 边权重...")
+        embedding_weights = get_or_compute_edge_weights(
+            session=session,
+            cache_dir=CACHE_DIR,
+            limit=10000,
+            force_recompute=force_recompute
+        )
+        print(f"  已加载 {len(embedding_weights)} 条边的动态权重")
 
     # 查询所有公司节点
     company_query = """
@@ -401,7 +408,13 @@ def analyze_fraud_rank_results(fraud_scores, session, top_n=50):
     return df_report
 
 
-def main():
+def main(force_recompute_embedding=False):
+    """
+    Main function for FraudRank analysis
+    
+    Args:
+        force_recompute_embedding: 是否强制重新计算 embedding 权重
+    """
     print("=" * 60)
     print("FraudRank 欺诈风险传导分析")
     print("=" * 60)
@@ -412,7 +425,7 @@ def main():
 
         # Step 1: 加载图数据
         print("\n[1/4] 加载图数据...")
-        graph = load_weighted_graph(session)
+        graph = load_weighted_graph(session, force_recompute=force_recompute_embedding)
         print(f"  节点数: {len(graph['nodes'])}")
         print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
 
@@ -449,4 +462,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="FraudRank 欺诈风险传导分析")
+    parser.add_argument(
+        "--force-recompute",
+        action="store_true",
+        help="强制重新计算 embedding 权重，忽略缓存"
+    )
+    args = parser.parse_args()
+    
+    main(force_recompute_embedding=args.force_recompute)

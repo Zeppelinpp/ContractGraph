@@ -128,3 +128,60 @@ class ContractSubGraphResponse(BaseModel):
     edge_count: int
     nodes: List[SubGraphNode]
     edges: List[SubGraphEdge]
+
+
+# ============================================================================
+# 循环交易检测相关模型
+# ============================================================================
+
+
+class CircularTradeParams(BaseModel):
+    """循环交易检测算法参数"""
+
+    type: str = Field(default="circular_trade", description="场景类型")
+    time_window_days: int = Field(default=180, ge=1, le=365, description="时间窗口（天）")
+    amount_threshold: float = Field(default=500000.0, ge=0, description="金额阈值")
+
+
+class CircularTradeRequest(BaseRequest):
+    """循环交易检测请求"""
+
+    params: Optional[CircularTradeParams] = Field(
+        default=None, description="循环交易检测算法参数"
+    )
+
+
+class CircularTradePattern(BaseModel):
+    """循环交易可疑模式"""
+
+    central_company: str = Field(..., description="核心公司ID")
+    central_company_name: str = Field(default="", description="核心公司名称")
+    dispersed_companies: List[str] = Field(..., description="分散节点公司ID列表")
+    related_companies: List[str] = Field(..., description="关联公司ID列表")
+    total_outflow: float = Field(..., description="流出金额")
+    total_inflow: float = Field(..., description="流入金额")
+    similarity: float = Field(..., description="流入流出相似度")
+    inter_trade_count: int = Field(..., description="中间交易数量")
+    time_span_days: int = Field(..., description="时间跨度（天）")
+    risk_score: float = Field(..., description="风险分数")
+    transaction_ids: List[str] = Field(default=[], description="涉及的交易ID列表")
+    contract_ids: List[str] = Field(default=[], description="涉及的合同ID列表")
+
+
+class CircularTradeSubGraphRequest(BaseModel):
+    """循环交易子图请求"""
+
+    contract_id: str = Field(..., description="合同ID（Nebula Graph 节点ID）")
+    time_window_days: int = Field(default=180, ge=1, le=365, description="时间窗口（天）")
+    amount_threshold: float = Field(default=500000.0, ge=0, description="金额阈值")
+
+
+class CircularTradeSubGraphResponse(BaseModel):
+    """循环交易子图响应"""
+
+    success: bool
+    central_company: str
+    html_url: str
+    node_count: int
+    edge_count: int
+    contract_ids: List[str]

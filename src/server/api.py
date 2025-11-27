@@ -21,6 +21,10 @@ from src.analysis.fraud_rank import (
 from src.analysis.contract_risk_subgraph import (
     get_contract_risk_subgraph_with_html,
 )
+from src.analysis.circular_trade import (
+    detect_fan_out_fan_in,
+    detect_circular_trade_by_contract,
+)
 from src.server.models import (
     FraudRankRequest,
     FraudRankParams,
@@ -31,6 +35,11 @@ from src.server.models import (
     ContractSubGraphResponse,
     SubGraphNode,
     SubGraphEdge,
+    CircularTradeRequest,
+    CircularTradeParams,
+    CircularTradePattern,
+    CircularTradeSubGraphRequest,
+    CircularTradeSubGraphResponse,
 )
 from src.config.models import FraudRankConfig
 
@@ -236,6 +245,161 @@ async def view_contract_risk_html(filename: str):
 
 
 # ============================================================================
+# 循环交易检测 API
+# ============================================================================
+
+
+@app.post("/api/circular-trade", response_model=BaseResponse)
+async def circular_trade_detection(request: CircularTradeRequest):
+    """
+    循环交易检测 - 分散汇聚模式分析
+
+    检测复杂的循环交易模式，包括分散-汇聚模式。
+    返回可疑的循环交易模式列表（按风险分数倒序），包含涉及的合同ID。
+    """
+    session = None
+    start_time = time.time()
+    try:
+        session = get_nebula_session()
+
+        params = request.params or CircularTradeParams()
+
+        suspicious_patterns = detect_fan_out_fan_in(
+            session=session,
+            time_window_days=params.time_window_days,
+            amount_threshold=params.amount_threshold,
+            company_ids=request.orgs,
+            periods=request.period,
+        )
+
+        pattern_list = [
+            CircularTradePattern(
+                central_company=p["central_company"],
+                central_company_name=p.get("central_company_name", ""),
+                dispersed_companies=p["dispersed_companies"],
+                related_companies=p["related_companies"],
+                total_outflow=p["total_outflow"],
+                total_inflow=p["total_inflow"],
+                similarity=p["similarity"],
+                inter_trade_count=p["inter_trade_count"],
+                time_span_days=p["time_span_days"],
+                risk_score=p["risk_score"],
+                transaction_ids=p.get("transaction_ids", []),
+                contract_ids=p.get("contract_ids", []),
+            )
+            for p in suspicious_patterns
+        ]
+
+        # Collect all contract IDs from all patterns
+        all_contract_ids = list(set(
+            cid for p in pattern_list for cid in p.contract_ids
+        ))
+
+        return BaseResponse(
+            type="circular_trade",
+            count=len(pattern_list),
+            contract_ids=all_contract_ids,
+            details={
+                "pattern_list": [p.model_dump() for p in pattern_list],
+                "metadata": {
+                    "pattern_count": len(pattern_list),
+                    "contract_count": len(all_contract_ids),
+                    "time_window_days": params.time_window_days,
+                    "amount_threshold": params.amount_threshold,
+                    "timestamp": datetime.now().isoformat(),
+                    "execution_time": round(time.time() - start_time, 2),
+                },
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.post("/api/circular-trade/subgraph", response_model=CircularTradeSubGraphResponse)
+async def get_circular_trade_subgraph(request: CircularTradeSubGraphRequest):
+    """
+    获取合同关联的循环交易模式子图
+
+    以合同ID为入口，查找合同的甲/乙方公司，
+    以这些公司为核心检测循环交易模式，并生成交互式HTML页面。
+    返回的 html_url 可直接嵌入前端 iframe 中。
+    """
+    session = None
+    try:
+        session = get_nebula_session()
+
+        result = detect_circular_trade_by_contract(
+            session=session,
+            contract_id=request.contract_id,
+            time_window_days=request.time_window_days,
+            amount_threshold=request.amount_threshold,
+        )
+
+        if not result.get("html_url"):
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", "未检测到循环交易模式")
+            )
+
+        html_filename = os.path.basename(result["html_url"])
+        html_url = f"/api/circular-trade/view/{html_filename}"
+
+        # Get the top pattern for stats
+        patterns = result.get("patterns", [])
+        top_pattern = patterns[0] if patterns else {}
+
+        node_count = (
+            1  # central company
+            + len(top_pattern.get("dispersed_companies", []))
+            + len(top_pattern.get("related_companies", []))
+            + len(top_pattern.get("contract_ids", []))
+        )
+        edge_count = len(top_pattern.get("outflow_transactions", [])) + len(
+            top_pattern.get("inflow_transactions", [])
+        )
+
+        # Collect all contract IDs from all patterns
+        all_contract_ids = list(set(
+            cid for p in patterns for cid in p.get("contract_ids", [])
+        ))
+
+        return CircularTradeSubGraphResponse(
+            success=True,
+            central_company=top_pattern.get("central_company", ""),
+            html_url=html_url,
+            node_count=node_count,
+            edge_count=edge_count,
+            contract_ids=all_contract_ids,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.get("/api/circular-trade/view/{filename}")
+async def view_circular_trade_html(filename: str):
+    """
+    提供循环交易模式 HTML 文件访问
+
+    前端可通过 iframe 嵌入此 URL 展示交互式图谱
+    """
+    file_path = os.path.join(REPORTS_DIR, filename)
+
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
+# ============================================================================
 # 健康检查
 # ============================================================================
 
@@ -254,9 +418,12 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "fraud_rank": "POST /api/fraud-rank",
+            "circular_trade": "POST /api/circular-trade",
+            "circular_trade_subgraph": "POST /api/circular-trade/subgraph",
+            "circular_trade_view": "GET /api/circular-trade/view/{filename}",
             "contract_subgraph": "POST /api/contract-risk/subgraph",
             "contract_subgraph_get": "GET /api/contract-risk/subgraph/{contract_id}",
-            "view_html": "GET /api/contract-risk/view/{filename}",
+            "contract_view": "GET /api/contract-risk/view/{filename}",
         },
     }
 

@@ -23,6 +23,7 @@ from src.analysis.contract_risk_subgraph import (
 )
 from src.server.models import (
     FraudRankRequest,
+    FraudRankParams,
     BaseResponse,
     ContractRiskItem,
     CompanyRiskItem,
@@ -31,6 +32,7 @@ from src.server.models import (
     SubGraphNode,
     SubGraphEdge,
 )
+from src.config.models import FraudRankConfig
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
@@ -60,24 +62,36 @@ async def fraud_rank_analysis(request: FraudRankRequest):
     try:
         session = get_nebula_session()
 
+        # 解析参数：用户配置优先，否则使用默认配置
+        params = request.params or FraudRankParams()
+        config = FraudRankConfig(
+            edge_weights=params.edge_weights,
+            event_type_weights=params.event_type_weights,
+            event_type_default_weight=params.event_type_default_weight,
+            status_weights=params.status_weights,
+            status_default_weight=params.status_default_weight,
+            amount_threshold=params.amount_threshold,
+            init_score_weights=params.init_score_weights,
+        )
+
         # 加载图数据
         graph = load_weighted_graph(
             session,
-            force_recompute=request.force_recompute,
-            config=DEFAULT_CONFIG,
-            company_ids=request.company_ids,
-            periods=request.periods,
+            force_recompute=params.force_recompute,
+            config=config,
+            company_ids=request.orgs,
+            periods=request.period,
         )
 
         # 初始化风险种子
-        init_scores = initialize_risk_seeds(session, config=DEFAULT_CONFIG)
+        init_scores = initialize_risk_seeds(session, config=config)
 
         # 计算 FraudRank
         fraud_scores = compute_fraud_rank(graph, init_scores, damping=0.85)
 
         # 生成分析报告
         report = analyze_fraud_rank_results(
-            fraud_scores, session, top_n=request.top_n, company_ids=request.company_ids
+            fraud_scores, session, top_n=params.top_n, company_ids=request.orgs
         )
 
         company_df = report.get("company_report")

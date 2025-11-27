@@ -98,56 +98,49 @@
 
 ### 法务风险分析（诉讼传染风险）- 参数配置
 
-场景类型：`fraud_rank` 或 `litigation_contagion`
+场景类型：`fraud_rank`
 
-参数说明：
-- `edge_weights`: 边权重配置，定义不同类型边的风险传导权重（权重越高表示风险传导能力越强），类型为 `object`，包含以下键值对：
-  - `CONTROLS`: 控股关系边权重，默认 0.8
-  - `LEGAL_PERSON`: 法人关系边权重，默认 0.75
-  - `PAYS`: 支付关系边权重，默认 0.65
-  - `RECEIVES`: 收款关系边权重，默认 0.60
-  - `TRADES_WITH`: 交易关系边权重，默认 0.50
-  - `IS_SUPPLIER`: 供应商关系边权重，默认 0.45
-  - `IS_CUSTOMER`: 客户关系边权重，默认 0.40
-  - `PARTY_A`: 合同甲方关系边权重，默认 0.50
-  - `PARTY_B`: 合同乙方关系边权重，默认 0.50
-- `event_type_weights`: 事件类型权重配置，定义不同类型法律事件的风险权重，类型为 `object`，默认包含 `Case: 0.8`、`Dispute: 0.5`
-- `event_type_default_weight`: 未知事件类型的默认权重，类型为 `number`，默认值 `0.3`
-- `status_weights`: 状态权重配置，定义法律事件不同状态的风险权重，类型为 `object`，默认包含 `F: 0.9`（已立案）、`I: 0.8`（一审）、`J: 0.7`（执行）、`N: 0.4`（已结案）
-- `status_default_weight`: 未知状态的默认权重，类型为 `number`，默认值 `0.5`
-- `amount_threshold`: 金额权重归一化的上限金额（单位：元），超过此金额的事件金额权重将被限制为 1.0，类型为 `number`，默认值 `10000000.0`（1000万）
+**params 参数说明：**
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `type` | string | `"fraud_rank"` | 场景类型标识 |
+| `top_n` | int | `50` | 返回 top N 结果 |
+| `force_recompute` | bool | `false` | 是否强制重新计算 embedding 权重 |
+| `edge_weights` | object | 见下方 | 边权重配置 |
+| `event_type_weights` | object | `{"Case": 0.8, "Dispute": 0.5}` | 法律事件类型权重 |
+| `event_type_default_weight` | number | `0.3` | 未知事件类型默认权重 |
+| `status_weights` | object | `{"F": 0.9, "I": 0.8, "J": 0.7, "N": 0.4}` | 事件状态权重 |
+| `status_default_weight` | number | `0.5` | 未知状态默认权重 |
+| `amount_threshold` | number | `10000000.0` | 金额归一化上限（元） |
 
-请求参数示例：
+**edge_weights 默认值：**
+```json
+{
+    "CONTROLS": 0.8, "LEGAL_PERSON": 0.75, "PAYS": 0.65, "RECEIVES": 0.60,
+    "TRADES_WITH": 0.50, "IS_SUPPLIER": 0.45, "IS_CUSTOMER": 0.40,
+    "PARTY_A": 0.50, "PARTY_B": 0.50
+}
+```
+
+**请求示例（使用默认参数）：**
 ```json
 {
     "orgs": ["org_001", "org_002"],
     "period": ["2024-01-01", "2024-12-31"],
+    "params": { "type": "fraud_rank" }
+}
+```
+
+**请求示例（自定义参数）：**
+```json
+{
+    "orgs": ["org_001"],
+    "period": ["2024-01-01", "2024-12-31"],
     "params": {
         "type": "fraud_rank",
-        "edge_weights": {
-            "CONTROLS": 0.8,
-            "LEGAL_PERSON": 0.75,
-            "PAYS": 0.65,
-            "RECEIVES": 0.60,
-            "TRADES_WITH": 0.50,
-            "IS_SUPPLIER": 0.45,
-            "IS_CUSTOMER": 0.40,
-            "PARTY_A": 0.50,
-            "PARTY_B": 0.50
-        },
-        "event_type_weights": {
-            "Case": 0.8,
-            "Dispute": 0.5
-        },
-        "event_type_default_weight": 0.3,
-        "status_weights": {
-            "F": 0.9,
-            "I": 0.8,
-            "J": 0.7,
-            "N": 0.4
-        },
-        "status_default_weight": 0.5,
-        "amount_threshold": 10000000.0
+        "top_n": 100,
+        "edge_weights": { "CONTROLS": 0.9, "LEGAL_PERSON": 0.8 },
+        "amount_threshold": 5000000.0
     }
 }
 ```

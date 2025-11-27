@@ -399,13 +399,27 @@ def get_risk_level(score):
         return "正常"
 
 
-def analyze_fraud_rank_results(fraud_scores, session, top_n=50):
+def analyze_fraud_rank_results(
+    fraud_scores, session, top_n=50, company_ids: Optional[List[str]] = None
+):
     """
     分析 FraudRank 结果并生成报告
+    
+    Args:
+        fraud_scores: dict {node_id: fraud_rank_score}
+        session: Nebula Graph session
+        top_n: Number of top results to include
+        company_ids: Company IDs filter (by Company.number)
     """
-    # 查询公司信息
-    company_query = """
+    # Build filter consistent with load_weighted_graph
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+    
+    company_query = f"""
     MATCH (c:Company)
+    {company_filter}
     RETURN id(c) as company_id, c.Company.name as name,
            c.Company.legal_person as legal_person,
            c.Company.credit_code as credit_code
@@ -511,7 +525,9 @@ def main(
 
         # Step 4: 生成分析报告
         print("\n[4/4] 生成分析报告...")
-        report = analyze_fraud_rank_results(fraud_scores, session, top_n=50)
+        report = analyze_fraud_rank_results(
+            fraud_scores, session, top_n=50, company_ids=company_ids
+        )
 
         print("\n" + "=" * 60)
         print("分析完成！")

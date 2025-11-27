@@ -452,9 +452,15 @@ def analyze_perform_risk(
     print(f"\n[3/4] 计算风险分数...")
     company_scores = {}
     
-    # Get company info
-    company_query = """
+    # Get company info with filter consistent with find_overdue_transactions
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+    
+    company_query = f"""
     MATCH (c:Company)
+    {company_filter}
     RETURN id(c) as company_id,
            properties(c) as c_props
     """

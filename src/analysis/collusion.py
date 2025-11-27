@@ -317,9 +317,15 @@ def main(
 
         print("\n[2/3] 分析串通模式...")
 
-        # 查询公司信息用于展示
-        company_query = """
+        # 查询公司信息用于展示，保持与 detect_collusion_network 过滤一致
+        company_filter = ""
+        if company_ids:
+            ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+            company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+        
+        company_query = f"""
         MATCH (c:Company)
+        {company_filter}
         RETURN id(c) as company_id, c.Company.name as name
         """
         companies = execute_query(session, company_query)

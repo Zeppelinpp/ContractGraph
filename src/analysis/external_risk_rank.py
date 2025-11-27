@@ -396,13 +396,32 @@ def get_risk_level(score):
 
 
 def analyze_external_risk_results(
-    risk_scores, risk_details, session, top_n=50, risk_type="all"
+    risk_scores, risk_details, session, top_n=50, risk_type="all",
+    company_ids: Optional[List[str]] = None,
 ):
     """
     Analyze External Risk Rank results and generate report
+    
+    Args:
+        risk_scores: dict {node_id: risk_score}
+        risk_details: dict {node_id: list of risk event details}
+        session: Nebula Graph session
+        top_n: Number of top results to include
+        risk_type: Risk type for report naming
+        company_ids: Company IDs filter (by Company.number)
     """
-    company_query = """
+    # Only query companies that have risk scores to avoid unnecessary data transfer
+    scored_company_ids = [cid for cid in risk_scores.keys() if "Company" in str(cid) or risk_scores[cid] > 0]
+    
+    # Build filter consistent with load_weighted_graph
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+    
+    company_query = f"""
     MATCH (c:Company)
+    {company_filter}
     RETURN id(c) as company_id, c.Company.name as name,
            c.Company.legal_person as legal_person,
            c.Company.credit_code as credit_code
@@ -536,7 +555,8 @@ def main(
         # Step 5: Generate report
         print("\n[5/5] 生成分析报告...")
         report = analyze_external_risk_results(
-            risk_scores, risk_details, session, top_n=50, risk_type=risk_type
+            risk_scores, risk_details, session, top_n=50, risk_type=risk_type,
+            company_ids=company_ids,
         )
 
         print("\n" + "=" * 60)

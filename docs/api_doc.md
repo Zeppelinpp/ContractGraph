@@ -90,6 +90,179 @@
   - `timestamp`: 分析时间戳
   - `execution_time`: 执行耗时（秒）
 
+#### 法务风险子图可视化
+
+接口：`POST /api/contract-risk/subgraph`
+
+以合同ID为入口，递归获取关联的法律事件、相对方公司、以及这些公司涉及的其他有法律事件的合同，生成交互式HTML可视化页面。
+
+**POST 请求参数：**
+```json
+{
+    "contract_id": "Contract_CON_001",
+    "max_depth": 3
+}
+```
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `contract_id` | string | 必填 | 合同ID（Nebula Graph 节点ID） |
+| `max_depth` | int | `3` | 递归深度，范围 1-5 |
+
+**返回结构示例：**
+```json
+{
+    "success": true,
+    "contract_id": "Contract_CON_001",
+    "max_depth": 3,
+    "html_url": "/api/contract-risk/view/contract_risk_subgraph_Contract_CON_001.html",
+    "node_count": 15,
+    "edge_count": 22,
+    "nodes": [
+        {
+            "id": "Contract_CON_001",
+            "type": "Contract",
+            "label": "采购合同-华信建材",
+            "properties": {"contract_no": "HT-2024-001", "amount": 1000000}
+        },
+        {
+            "id": "LegalEvent_CASE_001",
+            "type": "LegalEvent",
+            "label": "合同纠纷案件-1",
+            "properties": {"event_type": "Case", "status": "F"}
+        }
+    ],
+    "edges": [
+        {
+            "source": "Contract_CON_001",
+            "target": "LegalEvent_CASE_001",
+            "type": "RELATED_TO",
+            "properties": {}
+        }
+    ]
+}
+```
+
+**字段说明：**
+- `success`: 是否成功
+- `contract_id`: 入口合同ID
+- `max_depth`: 递归深度
+- `html_url`: 可视化HTML页面URL（可嵌入iframe）
+- `node_count`: 子图节点数量
+- `edge_count`: 子图边数量
+- `nodes`: 节点列表
+  - `id`: 节点ID
+  - `type`: 节点类型（Contract/LegalEvent/Company/Person）
+  - `label`: 节点标签
+  - `properties`: 节点属性
+- `edges`: 边列表
+  - `source`: 源节点ID
+  - `target`: 目标节点ID
+  - `type`: 边类型（RELATED_TO/PARTY_A/PARTY_B/LEGAL_PERSON等）
+  - `properties`: 边属性
+
+**查看HTML页面：**
+```bash
+# 在浏览器中打开
+open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contract_CON_001.html"
+```
+
+### 循环交易检测
+
+场景类型：`circular_trade`
+
+返回结构示例：
+```json
+{
+    "type": "circular_trade",
+    "count": 3,
+    "contract_ids": ["CON_001", "CON_005", "CON_012"],
+    "details": {
+        "pattern_list": [
+            {
+                "central_company": "Company_ORG002",
+                "central_company_name": "中建华东分公司",
+                "dispersed_companies": ["Company_SUP001", "Company_SUP002", "Company_SUP003"],
+                "related_companies": ["Company_ORG002", "Company_ORG001"],
+                "total_outflow": 5000000.0,
+                "total_inflow": 4800000.0,
+                "similarity": 0.96,
+                "inter_trade_count": 5,
+                "time_span_days": 120,
+                "risk_score": 0.68,
+                "transaction_ids": ["TXN_001", "TXN_002", "TXN_003"],
+                "contract_ids": ["CON_001", "CON_005"]
+            }
+        ],
+        "metadata": {
+            "pattern_count": 3,
+            "contract_count": 3,
+            "time_window_days": 180,
+            "amount_threshold": 500000.0,
+            "timestamp": "2024-01-20T10:30:00.000000",
+            "execution_time": 1.85
+        }
+    }
+}
+```
+
+字段说明：
+- `pattern_list`: 可疑循环交易模式列表，按风险分数倒序排列
+  - `central_company`: 核心公司ID（资金流出的源头）
+  - `central_company_name`: 核心公司名称
+  - `dispersed_companies`: 分散节点公司ID列表（资金流向的中间节点）
+  - `related_companies`: 关联公司ID列表（通过法人或控股关系关联的公司）
+  - `total_outflow`: 流出金额（元）
+  - `total_inflow`: 流入金额（元）
+  - `similarity`: 流入流出金额相似度（0-1，越高越可疑）
+  - `inter_trade_count`: 分散节点之间的交易数量
+  - `time_span_days`: 资金循环的时间跨度（天）
+  - `risk_score`: 风险分数（0-1，越高风险越大）
+  - `transaction_ids`: 涉及的交易ID列表
+  - `contract_ids`: 涉及的合同ID列表
+- `metadata`: 分析元数据
+  - `pattern_count`: 检测到的可疑模式数量
+  - `contract_count`: 涉及的合同数量
+  - `time_window_days`: 检测使用的时间窗口
+  - `amount_threshold`: 检测使用的金额阈值
+  - `timestamp`: 分析时间戳
+  - `execution_time`: 执行耗时（秒）
+
+#### 循环交易子图可视化
+
+接口：`POST /api/circular-trade/subgraph`
+
+以合同ID为入口，查找合同甲/乙方公司，检测以该公司为核心的循环交易模式，并生成交互式HTML可视化页面。
+
+请求参数：
+```json
+{
+    "contract_id": "Contract_CON_001",
+    "time_window_days": 180,
+    "amount_threshold": 500000.0
+}
+```
+
+返回结构示例：
+```json
+{
+    "success": true,
+    "central_company": "Company_ORG002",
+    "html_url": "/api/circular-trade/view/circular_trade_pattern_Company_ORG002.html",
+    "node_count": 8,
+    "edge_count": 12,
+    "contract_ids": ["CON_001", "CON_005"]
+}
+```
+
+字段说明：
+- `success`: 是否成功检测到循环交易模式
+- `central_company`: 检测到的核心公司ID
+- `html_url`: 可视化HTML页面URL（可嵌入iframe）
+- `node_count`: 子图节点数量
+- `edge_count`: 子图边数量
+- `contract_ids`: 涉及的合同ID列表
+
 ### 履约关联 & 履约能力 风险分析
 > details结构, 待定
 ... 相关的场景的details数据结构定义
@@ -145,5 +318,38 @@
 }
 ```
 
-### 场景2
+### 循环交易检测 - 参数配置
+
+场景类型：`circular_trade`
+
+**params 参数说明：**
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `type` | string | `"circular_trade"` | 场景类型标识 |
+| `time_window_days` | int | `180` | 时间窗口（天），范围 1-365 |
+| `amount_threshold` | number | `500000.0` | 金额阈值（元），低于此金额的交易不纳入检测 |
+
+**请求示例（使用默认参数）：**
+```json
+{
+    "orgs": ["org_001", "org_002"],
+    "period": ["2024-01-01", "2024-12-31"],
+    "params": { "type": "circular_trade" }
+}
+```
+
+**请求示例（自定义参数）：**
+```json
+{
+    "orgs": ["org_001"],
+    "period": ["2024-01-01", "2024-06-30"],
+    "params": {
+        "type": "circular_trade",
+        "time_window_days": 90,
+        "amount_threshold": 1000000.0
+    }
+}
+```
+
+### 场景3
 ...

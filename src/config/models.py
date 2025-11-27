@@ -67,6 +67,16 @@ class FraudRankConfig(BaseModel):
         description="金额权重归一化的上限金额，超过此金额的事件金额权重将被限制为 1.0"
     )
     
+    # 初始分数计算的加权平均系数
+    init_score_weights: Dict[str, float] = Field(
+        default={
+            "event_type": 0.4,   # 事件类型权重占比
+            "amount": 0.35,      # 金额权重占比
+            "status": 0.25,      # 状态权重占比
+        },
+        description="初始风险分数计算时各因子的加权平均系数，总和应为1.0"
+    )
+    
     class Config:
         json_schema_extra = {
             "example": {

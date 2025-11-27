@@ -56,7 +56,7 @@ def calculate_init_score(
             event["status"], config.status_default_weight
         )
 
-        score += type_weight * amount_weight * status_weight
+        score += (type_weight +  amount_weight + status_weight) / 3
 
     return min(score, 1.0)
 
@@ -403,13 +403,19 @@ def analyze_fraud_rank_results(
     fraud_scores, session, top_n=50, company_ids: Optional[List[str]] = None
 ):
     """
-    分析 FraudRank 结果并生成报告
+    分析 FraudRank 结果并生成报告，包含公司和合同的风险排名
     
     Args:
         fraud_scores: dict {node_id: fraud_rank_score}
         session: Nebula Graph session
         top_n: Number of top results to include
         company_ids: Company IDs filter (by Company.number)
+    
+    Returns:
+        dict: {
+            "company_report": DataFrame of top companies by risk score,
+            "contract_report": DataFrame of top contracts by risk score
+        }
     """
     # Build filter consistent with load_weighted_graph
     company_filter = ""
@@ -437,16 +443,48 @@ def analyze_fraud_rank_results(
                 "credit_code": row.get("credit_code", "N/A"),
             }
 
+    # 查询合同信息
+    contract_query = """
+    MATCH (con:Contract)
+    OPTIONAL MATCH (pa:Company)-[:PARTY_A]->(con)
+    OPTIONAL MATCH (pb:Company)-[:PARTY_B]->(con)
+    RETURN id(con) as contract_id, 
+           con.Contract.contract_no as contract_no,
+           con.Contract.contract_name as contract_name,
+           con.Contract.amount as amount,
+           con.Contract.sign_date as sign_date,
+           con.Contract.status as status,
+           id(pa) as party_a_id, pa.Company.name as party_a_name,
+           id(pb) as party_b_id, pb.Company.name as party_b_name
+    """
+    contracts = execute_query(session, contract_query)
+    
+    # 构建合同信息字典
+    contract_info = {}
+    for row in contracts:
+        contract_id = row.get("contract_id", "")
+        if contract_id:
+            contract_info[contract_id] = {
+                "contract_no": row.get("contract_no", "N/A"),
+                "contract_name": row.get("contract_name", "Unknown"),
+                "amount": row.get("amount", 0),
+                "sign_date": row.get("sign_date", "N/A"),
+                "status": row.get("status", "N/A"),
+                "party_a_id": row.get("party_a_id", ""),
+                "party_a_name": row.get("party_a_name", "N/A"),
+                "party_b_id": row.get("party_b_id", ""),
+                "party_b_name": row.get("party_b_name", "N/A"),
+            }
+
     # 按分数排序
     sorted_scores = sorted(fraud_scores.items(), key=lambda x: x[1], reverse=True)
 
-    # 生成报告
-    report = []
+    # 生成公司报告
+    company_report = []
     for node_id, score in sorted_scores[:top_n]:
-        # 只处理公司节点
         if node_id in company_info:
             info = company_info[node_id]
-            report.append(
+            company_report.append(
                 {
                     "公司ID": node_id,
                     "公司名称": info.get("name", "Unknown"),
@@ -456,16 +494,50 @@ def analyze_fraud_rank_results(
                     "信用代码": info.get("credit_code", "N/A"),
                 }
             )
+    
+    # 生成合同报告（按风险分数倒序）
+    contract_report = []
+    for node_id, score in sorted_scores:
+        if node_id in contract_info:
+            info = contract_info[node_id]
+            contract_report.append(
+                {
+                    "合同ID": node_id,
+                    "合同编号": info.get("contract_no", "N/A"),
+                    "合同名称": info.get("contract_name", "Unknown"),
+                    "风险分数": round(score, 4),
+                    "风险等级": get_risk_level(score),
+                    "签约金额": info.get("amount", 0),
+                    "签订日期": info.get("sign_date", "N/A"),
+                    "合同状态": info.get("status", "N/A"),
+                    "甲方ID": info.get("party_a_id", ""),
+                    "甲方名称": info.get("party_a_name", "N/A"),
+                    "乙方ID": info.get("party_b_id", ""),
+                    "乙方名称": info.get("party_b_name", "N/A"),
+                }
+            )
+    
+    # 只取 top_n 合同
+    contract_report = contract_report[:top_n]
 
-    df_report = pd.DataFrame(report)
+    df_company_report = pd.DataFrame(company_report)
+    df_contract_report = pd.DataFrame(contract_report)
 
     # 确保报告目录存在
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
-    output_file = os.path.join(REPORTS_DIR, "fraud_rank_report.csv")
-    df_report.to_csv(output_file, index=False, encoding="utf-8-sig")
+    # 保存公司报告
+    company_output_file = os.path.join(REPORTS_DIR, "fraud_rank_report.csv")
+    df_company_report.to_csv(company_output_file, index=False, encoding="utf-8-sig")
+    
+    # 保存合同报告
+    contract_output_file = os.path.join(REPORTS_DIR, "fraud_rank_contract_report.csv")
+    df_contract_report.to_csv(contract_output_file, index=False, encoding="utf-8-sig")
 
-    return df_report
+    return {
+        "company_report": df_company_report,
+        "contract_report": df_contract_report,
+    }
 
 
 def main(
@@ -533,12 +605,22 @@ def main(
         print("分析完成！")
         print("=" * 60)
 
-        if len(report) > 0:
+        company_report = report.get("company_report", pd.DataFrame())
+        contract_report = report.get("contract_report", pd.DataFrame())
+        
+        if len(company_report) > 0:
             print(f"\n前 10 高风险公司：\n")
-            print(report.head(10).to_string(index=False))
-            print(f"\n完整报告已保存至: reports/fraud_rank_report.csv")
+            print(company_report.head(10).to_string(index=False))
+            print(f"\n公司报告已保存至: reports/fraud_rank_report.csv")
         else:
             print("\n未发现高风险公司")
+        
+        if len(contract_report) > 0:
+            print(f"\n前 10 高风险合同：\n")
+            print(contract_report.head(10).to_string(index=False))
+            print(f"\n合同报告已保存至: reports/fraud_rank_contract_report.csv")
+        else:
+            print("\n未发现高风险合同")
 
     finally:
         if session:

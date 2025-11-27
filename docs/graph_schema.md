@@ -105,25 +105,36 @@
 **用途**: 表示交易流水实体，记录公司间的实际资金流动
 
 **属性**:
-| 属性名 | 类型 | 说明 | 示例 |
-|--------|------|------|------|
-| transaction_type | string | 交易类型 | INFLOW:流入 OUTFLOW:流出 |
-| transaction_no | string | 交易单号 | IN2024000001 |
-| contract_no | string | 关联合同号 | HT2024000001 |
-| amount | double | 交易金额 | 2500000.00 |
-| transaction_date | string | 交易日期 | 2025-09-20 |
-| status | string | 状态 | C:已完成 |
-| description | string | 描述 | 建材采购首期款项流入 |
-| fpaidamount | double | 已履约金额 | 1898679.00 |
-| ftotalamount | double | 应履约金额 | 2675136.00 |
-| fbiztimeend | string | 履约截止日期 | 2026-04-02 |
-| fperformstatus | string | 履约状态 | A:待履约 B:履约中 C:已履约 |
+| 属性名 | 类型 | 说明 | 示例 | 来源字段 |
+|--------|------|------|------|----------|
+| transaction_type | string | 交易类型 | INFLOW:流入 OUTFLOW:流出 | 根据数据源判断：performplanin为INFLOW，performplanout为OUTFLOW |
+| transaction_no | string | 交易单号 | TXN_IN_0001 | 自增ID，不来自源表 |
+| contract_no | string | 关联合同号 | HT2024000001 | fbillno |
+| amount | double | 交易金额 | 5353380.00 | ftotalamount |
+| transaction_date | string | 交易日期 | 2025-09-18 | fcreatetime |
+| status | string | 履约状态 | A:待履约 B:履约中 C:已履约 | fperformstatus |
+| description | string | 描述 | 建材采购合同首期款项流入 | fperformoverview |
+| fpaidamount | double | 已履约金额 | 2676690.00 | fpaidallamount |
+| starttime | string | 履约开始日期 | 2025-09-18 | fbiztime |
+| duetime | string | 履约截止日期 | 2025-11-18 | fbiztimeend |
 
 **数据来源**: 
-- t_mscon_performplanin_虚拟数据.csv (流入)
-- t_mscon_performplanout_虚拟数据.csv (流出)
+- t_mscon_performplanin.csv (流入) - 收入履约计划
+- t_mscon_performplanout.csv (流出) - 支出履约计划
 
-**节点数量**: 60个 (30个INFLOW + 30个OUTFLOW)
+**字段映射说明**:
+- `transaction_type`: 数据来源决定，performplanin → INFLOW，performplanout → OUTFLOW
+- `transaction_no`: 自增ID，格式为 TXN_IN_XXXX 或 TXN_OUT_XXXX
+- `contract_no`: 来自源表的 fbillno 字段
+- `amount`: 来自源表的 ftotalamount 字段（应履约金额）
+- `transaction_date`: 来自源表的 fcreatetime 字段
+- `status`: 来自源表的 fperformstatus 字段（A:待履约 B:履约中 C:已履约）
+- `description`: 来自源表的 fperformoverview 字段
+- `fpaidamount`: 来自源表的 fpaidallamount 字段（已履约金额）
+- `starttime`: 来自源表的 fbiztime 字段
+- `duetime`: 来自源表的 fbiztimeend 字段
+
+**节点数量**: 30个 (15个INFLOW + 15个OUTFLOW)
 
 ---
 
@@ -497,10 +508,10 @@ properties: "event_type=BusinessAbnormal; label=存在异常经营; source=prima
 | Company | 114 | 公司节点 |
 | Contract | 100 | 合同节点 |
 | LegalEvent | 20 | 法律事件节点 |
-| Transaction | 60 | 交易节点 |
+| Transaction | 30 | 交易节点 |
 | AdminPenalty | 12 | 行政处罚节点【新增】 |
 | BusinessAbnormal | 27 | 经营异常节点【新增】 |
-| **总计** | **498** | |
+| **总计** | **468** | |
 
 ### 边统计
 | 边类型 | 数量 | 说明 |
@@ -597,7 +608,7 @@ properties: "event_type=BusinessAbnormal; label=存在异常经营; source=prima
 - `nodes_company.csv` (114行)
 - `nodes_contract.csv` (100行)
 - `nodes_legal_event.csv` (20行)
-- `nodes_transaction.csv` (60行)
+- `nodes_transaction.csv` (30行)
 - `nodes_admin_penalty.csv` (12行) 【新增】
 - `nodes_business_abnormal.csv` (27行) 【新增】
 
@@ -611,7 +622,7 @@ properties: "event_type=BusinessAbnormal; label=存在异常经营; source=prima
 - `edges_dispute_contract.csv` (10行)
 - `edges_is_supplier.csv` (43行)
 - `edges_is_customer.csv` (73行)
-- `edges_company_transaction.csv` (120行)
+- `edges_company_transaction.csv` (60行)
 - `edges_employment.csv` (80行) 【新增】
 - `edges_admin_penalty_company.csv` (12行) 【新增】
 - `edges_business_abnormal_company.csv` (26行) 【新增】

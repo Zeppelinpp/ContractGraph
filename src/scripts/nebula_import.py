@@ -283,9 +283,8 @@ def create_space_and_schema(session):
             status string,
             description string,
             fpaidamount double,
-            ftotalamount double,
-            fbiztimeend string,
-            fperformstatus string
+            starttime string,
+            duetime string
         );
         """,
     )
@@ -298,20 +297,14 @@ def create_space_and_schema(session):
         pass
 
     try:
-        execute(session, "ALTER TAG Transaction ADD (ftotalamount double);")
-        print("  更新 Transaction tag: 添加 ftotalamount 字段")
+        execute(session, "ALTER TAG Transaction ADD (starttime string);")
+        print("  更新 Transaction tag: 添加 starttime 字段")
     except RuntimeError:
         pass
 
     try:
-        execute(session, "ALTER TAG Transaction ADD (fbiztimeend string);")
-        print("  更新 Transaction tag: 添加 fbiztimeend 字段")
-    except RuntimeError:
-        pass
-
-    try:
-        execute(session, "ALTER TAG Transaction ADD (fperformstatus string);")
-        print("  更新 Transaction tag: 添加 fperformstatus 字段")
+        execute(session, "ALTER TAG Transaction ADD (duetime string);")
+        print("  更新 Transaction tag: 添加 duetime 字段")
     except RuntimeError:
         pass
 
@@ -421,9 +414,8 @@ def create_tag_indexes(session):
         ("transaction_status", "Transaction", "status"),
         ("transaction_description", "Transaction", "description"),
         ("transaction_fpaidamount", "Transaction", "fpaidamount"),
-        ("transaction_ftotalamount", "Transaction", "ftotalamount"),
-        ("transaction_fbiztimeend", "Transaction", "fbiztimeend"),
-        ("transaction_fperformstatus", "Transaction", "fperformstatus"),
+        ("transaction_starttime", "Transaction", "starttime"),
+        ("transaction_duetime", "Transaction", "duetime"),
     ]
 
     # AdminPenalty Tag 索引
@@ -482,12 +474,12 @@ def create_tag_indexes(session):
         "transaction_type",
         "transaction_no",
         "transaction_date",
-        "fbiztimeend",
-        "fperformstatus",
+        "starttime",
+        "duetime",
     }
 
     # double 类型的属性不需要指定长度
-    double_props = {"amount", "fpaidamount", "ftotalamount"}
+    double_props = {"amount", "fpaidamount"}
 
     for index_name, tag_name, prop_name in all_indexes:
         if prop_name in string_props:
@@ -856,10 +848,7 @@ def import_transaction_nodes(session):
         for row in batch:
             node_id = escape(row.get("node_id"))
             amount = parse_float(row.get("amount"))
-            fpaidamount = parse_float(
-                row.get("fpaidamount") or row.get("fpaidallamount") or "0"
-            )
-            ftotalamount = parse_float(row.get("ftotalamount", "0"))
+            fpaidamount = parse_float(row.get("fpaidamount", "0"))
             value = (
                 f'"{node_id}": ('
                 f'"{escape(row.get("transaction_type"))}", '
@@ -870,9 +859,8 @@ def import_transaction_nodes(session):
                 f'"{escape(row.get("status"))}", '
                 f'"{escape(row.get("description"))}", '
                 f"{fpaidamount}, "
-                f"{ftotalamount}, "
-                f'"{escape(row.get("fbiztimeend", ""))}", '
-                f'"{escape(row.get("fperformstatus", ""))}")'
+                f'"{escape(row.get("starttime", ""))}", '
+                f'"{escape(row.get("duetime", ""))}")'
             )
             values.append(value)
 
@@ -880,7 +868,7 @@ def import_transaction_nodes(session):
             "INSERT VERTEX Transaction("
             "transaction_type, transaction_no, contract_no, amount, "
             "transaction_date, status, description, "
-            "fpaidamount, ftotalamount, fbiztimeend, fperformstatus) "
+            "fpaidamount, starttime, duetime) "
             f"VALUES {', '.join(values)};"
         )
         try:
@@ -893,15 +881,12 @@ def import_transaction_nodes(session):
                 for row in batch:
                     node_id = escape(row.get("node_id"))
                     amount = parse_float(row.get("amount"))
-                    fpaidamount = parse_float(
-                        row.get("fpaidamount") or row.get("fpaidallamount") or "0"
-                    )
-                    ftotalamount = parse_float(row.get("ftotalamount", "0"))
+                    fpaidamount = parse_float(row.get("fpaidamount", "0"))
                     single_query = (
                         "INSERT VERTEX Transaction("
                         "transaction_type, transaction_no, contract_no, amount, "
                         "transaction_date, status, description, "
-                        "fpaidamount, ftotalamount, fbiztimeend, fperformstatus) "
+                        "fpaidamount, starttime, duetime) "
                         f'VALUES "{node_id}": ('
                         f'"{escape(row.get("transaction_type"))}", '
                         f'"{escape(row.get("transaction_no"))}", '
@@ -911,9 +896,8 @@ def import_transaction_nodes(session):
                         f'"{escape(row.get("status"))}", '
                         f'"{escape(row.get("description"))}", '
                         f"{fpaidamount}, "
-                        f"{ftotalamount}, "
-                        f'"{escape(row.get("fbiztimeend", ""))}", '
-                        f'"{escape(row.get("fperformstatus", ""))}");'
+                        f'"{escape(row.get("starttime", ""))}", '
+                        f'"{escape(row.get("duetime", ""))}");'
                     )
                     try:
                         execute(session, single_query)

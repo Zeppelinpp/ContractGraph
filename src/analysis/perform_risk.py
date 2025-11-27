@@ -114,9 +114,9 @@ def find_overdue_transactions(session, current_date: datetime):
                     "transaction_no": t_props.get("transaction_no", ""),
                     "contract_no": contract_no,
                     "fpaidamount": t_props.get("fpaidamount", 0),
-                    "ftotalamount": t_props.get("ftotalamount", 0),
-                    "fbiztimeend": t_props.get("fbiztimeend", ""),
-                    "fperformstatus": t_props.get("fperformstatus", ""),
+                    "amount": t_props.get("amount", 0),
+                    "duetime": t_props.get("duetime", ""),
+                    "status": t_props.get("status", ""),
                     "transaction_type": t_props.get("transaction_type", ""),
                     "contract_id": contract_info["contract_id"],
                     "contract_name": contract_info["contract_name"],
@@ -131,29 +131,29 @@ def find_overdue_transactions(session, current_date: datetime):
         transaction_no = row.get("transaction_no", "")
         contract_no = row.get("contract_no", "")
         fpaidamount = row.get("fpaidamount", 0)
-        ftotalamount = row.get("ftotalamount", 0)
-        fbiztimeend_str = row.get("fbiztimeend", "")
-        fperformstatus = row.get("fperformstatus", "")
+        amount = row.get("amount", 0)
+        duetime_str = row.get("duetime", "")
+        status = row.get("status", "")
         transaction_type = row.get("transaction_type", "")
         contract_id = row.get("contract_id", "")
         contract_name = row.get("contract_name", "")
         company_id = row.get("company_id", "")
         company_name = row.get("company_name", "")
         
-        # Skip if status is completed
-        if fperformstatus == "C":
+        # Skip if status is completed (C = 已履约)
+        if status == "C":
             continue
         
         # Parse amounts
         try:
             fpaidamount = float(fpaidamount) if fpaidamount else 0.0
-            ftotalamount = float(ftotalamount) if ftotalamount else 0.0
+            amount = float(amount) if amount else 0.0
         except (ValueError, TypeError):
             fpaidamount = 0.0
-            ftotalamount = 0.0
+            amount = 0.0
         
         # Parse due date
-        due_date = parse_date(fbiztimeend_str)
+        due_date = parse_date(duetime_str)
         if not due_date:
             continue
         
@@ -161,13 +161,13 @@ def find_overdue_transactions(session, current_date: datetime):
         is_overdue = False
         overdue_type = ""
         
-        # Payment overdue: due_date < current_date AND ftotalamount > fpaidamount
-        if due_date < current_date and ftotalamount > fpaidamount:
+        # Payment overdue: due_date < current_date AND amount > fpaidamount
+        if due_date < current_date and amount > fpaidamount:
             is_overdue = True
             overdue_type = "收款逾期"
         
         # Delivery overdue: due_date < current_date AND status != C
-        if due_date < current_date and fperformstatus != "C":
+        if due_date < current_date and status != "C":
             is_overdue = True
             if overdue_type:
                 overdue_type = "收款逾期+交货逾期"
@@ -184,7 +184,7 @@ def find_overdue_transactions(session, current_date: datetime):
                 "company_id": company_id,
                 "company_name": company_name,
                 "fpaidamount": fpaidamount,
-                "ftotalamount": ftotalamount,
+                "amount": amount,
                 "due_date": due_date,
                 "overdue_days": (current_date - due_date).days,
                 "overdue_type": overdue_type,

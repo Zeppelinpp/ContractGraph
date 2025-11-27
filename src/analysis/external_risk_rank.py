@@ -8,6 +8,7 @@
 import os
 import pandas as pd
 from collections import defaultdict
+from typing import List, Optional
 from src.utils.nebula_utils import get_nebula_session, execute_query
 from src.utils.embedding import (
     compute_edge_weights,
@@ -101,7 +102,12 @@ def calculate_business_abnormal_score(event):
     return min(score, 1.0)
 
 
-def load_weighted_graph(session, embedding_weights=None):
+def load_weighted_graph(
+    session,
+    embedding_weights=None,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Load graph data from Nebula Graph and build weighted adjacency list
     Focus on Company-to-Company propagation paths
@@ -109,6 +115,8 @@ def load_weighted_graph(session, embedding_weights=None):
     Args:
         session: Nebula Graph session
         embedding_weights: Pre-computed embedding weights dict, if None will use static weights
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
 
     Returns:
         dict: graph structure with nodes, edges, out_degree
@@ -118,8 +126,14 @@ def load_weighted_graph(session, embedding_weights=None):
     if embedding_weights is None:
         embedding_weights = {}
 
-    # Load all Company nodes
-    company_query = "MATCH (c:Company) RETURN id(c) as company_id"
+    # Build company filter
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+
+    # Load Company nodes
+    company_query = f"MATCH (c:Company) {company_filter} RETURN id(c) as company_id"
     companies = execute_query(session, company_query)
     for row in companies:
         company_id = row.get("company_id", "")
@@ -214,7 +228,12 @@ def load_weighted_graph(session, embedding_weights=None):
     return graph
 
 
-def initialize_external_risk_seeds(session, risk_type="all"):
+def initialize_external_risk_seeds(
+    session,
+    risk_type="all",
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Initialize risk seeds from external risk events (AdminPenalty, BusinessAbnormal)
     Risk is directly assigned to companies linked to these events
@@ -222,6 +241,8 @@ def initialize_external_risk_seeds(session, risk_type="all"):
     Args:
         session: Nebula Graph session
         risk_type: 'admin_penalty', 'business_abnormal', or 'all'
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围，按register_date过滤）
 
     Returns:
         dict: {company_id: init_score}
@@ -229,10 +250,25 @@ def initialize_external_risk_seeds(session, risk_type="all"):
     init_scores = defaultdict(float)
     risk_details = defaultdict(list)  # Store risk event details for reporting
 
+    # Build filters
+    where_clauses = []
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        where_clauses.append(f"c.Company.number IN [{ids_str}]")
+
     # AdminPenalty -> Company
     if risk_type in ["admin_penalty", "all"]:
-        penalty_query = """
+        penalty_where = list(where_clauses)
+        if periods:
+            if len(periods) == 1:
+                penalty_where.append(f"pen.AdminPenalty.register_date == '{periods[0]}'")
+            elif len(periods) == 2:
+                penalty_where.append(f"pen.AdminPenalty.register_date >= '{periods[0]}' AND pen.AdminPenalty.register_date <= '{periods[1]}'")
+        
+        penalty_filter = f"WHERE {' AND '.join(penalty_where)}" if penalty_where else ""
+        penalty_query = f"""
         MATCH (pen:AdminPenalty)-[:ADMIN_PENALTY_OF]->(c:Company)
+        {penalty_filter}
         RETURN id(c) as company_id, id(pen) as event_id,
                pen.AdminPenalty.amount as amount,
                pen.AdminPenalty.status as status,
@@ -261,8 +297,17 @@ def initialize_external_risk_seeds(session, risk_type="all"):
 
     # BusinessAbnormal -> Company
     if risk_type in ["business_abnormal", "all"]:
-        abnormal_query = """
+        abnormal_where = list(where_clauses)
+        if periods:
+            if len(periods) == 1:
+                abnormal_where.append(f"abn.BusinessAbnormal.register_date == '{periods[0]}'")
+            elif len(periods) == 2:
+                abnormal_where.append(f"abn.BusinessAbnormal.register_date >= '{periods[0]}' AND abn.BusinessAbnormal.register_date <= '{periods[1]}'")
+        
+        abnormal_filter = f"WHERE {' AND '.join(abnormal_where)}" if abnormal_where else ""
+        abnormal_query = f"""
         MATCH (abn:BusinessAbnormal)-[:BUSINESS_ABNORMAL_OF]->(c:Company)
+        {abnormal_filter}
         RETURN id(c) as company_id, id(abn) as event_id,
                abn.BusinessAbnormal.status as status,
                abn.BusinessAbnormal.register_date as register_date,
@@ -412,18 +457,30 @@ def analyze_external_risk_results(
     return df_report
 
 
-def main(risk_type="all", use_cached_embedding=True):
+def main(
+    risk_type="all",
+    use_cached_embedding=True,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Main function for External Risk Rank analysis
 
     Args:
         risk_type: 'admin_penalty', 'business_abnormal', or 'all'
         use_cached_embedding: Whether to use cached embedding weights
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
     """
     print("=" * 60)
     print(f"外部风险事件传导分析 (External Risk Rank)")
     print(f"风险类型: {risk_type}")
     print("=" * 60)
+    
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
 
     session = None
     try:
@@ -450,13 +507,23 @@ def main(risk_type="all", use_cached_embedding=True):
 
         # Step 2: Load graph data
         print("\n[2/5] 加载图数据...")
-        graph = load_weighted_graph(session, embedding_weights)
+        graph = load_weighted_graph(
+            session,
+            embedding_weights,
+            company_ids=company_ids,
+            periods=periods,
+        )
         print(f"  节点数: {len(graph['nodes'])}")
         print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
 
         # Step 3: Initialize risk seeds
         print("\n[3/5] 初始化外部风险种子节点...")
-        init_scores, risk_details = initialize_external_risk_seeds(session, risk_type)
+        init_scores, risk_details = initialize_external_risk_seeds(
+            session,
+            risk_type,
+            company_ids=company_ids,
+            periods=periods,
+        )
         seed_count = sum(1 for s in init_scores.values() if s > 0)
         print(f"  风险种子节点数: {seed_count}")
         if seed_count > 0:
@@ -506,6 +573,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-cache", action="store_true", help="不使用缓存的 embedding 权重，重新计算"
     )
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
+    )
     args = parser.parse_args()
 
-    main(risk_type=args.risk_type, use_cached_embedding=not args.no_cache)
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+
+    main(
+        risk_type=args.risk_type,
+        use_cached_embedding=not args.no_cache,
+        company_ids=company_ids,
+        periods=periods,
+    )

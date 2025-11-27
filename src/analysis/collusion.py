@@ -8,6 +8,7 @@ import os
 import pandas as pd
 import json
 from collections import defaultdict, Counter
+from typing import List, Optional
 from src.utils.nebula_utils import get_nebula_session, execute_query
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
@@ -54,15 +55,31 @@ def is_near_threshold(
     return False
 
 
-def analyze_collusion_patterns(company_cluster, session):
+def analyze_collusion_patterns(
+    company_cluster,
+    session,
+    periods: Optional[List[str]] = None,
+):
     """
     分析公司集群的串通模式
+    
+    Args:
+        company_cluster: 公司集群列表
+        session: Nebula session
+        periods: 时间段列表（单值或[start, end]范围）
     """
-    # 查询集群内公司作为乙方的合同
+    # Build time filter
+    periods_filter = ""
+    if periods:
+        if len(periods) == 1:
+            periods_filter = f"AND con.Contract.sign_date == '{periods[0]}'"
+        elif len(periods) == 2:
+            periods_filter = f"AND con.Contract.sign_date >= '{periods[0]}' AND con.Contract.sign_date <= '{periods[1]}'"
+    
     company_ids_str = ", ".join([f'"{c}"' for c in company_cluster])
     contract_query = f"""
     MATCH (c:Company)-[:PARTY_B]->(con:Contract)
-    WHERE id(c) IN [{company_ids_str}]
+    WHERE id(c) IN [{company_ids_str}] {periods_filter}
     RETURN id(c) as company_id, id(con) as contract_id,
            con.Contract.sign_date as sign_date,
            con.Contract.amount as amount
@@ -148,16 +165,33 @@ def analyze_collusion_patterns(company_cluster, session):
     }
 
 
-def detect_collusion_network(session, min_cluster_size=3):
+def detect_collusion_network(
+    session,
+    min_cluster_size=3,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     检测关联方串通网络
+
+    Args:
+        session: Nebula session
+        min_cluster_size: 最小集群大小
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
 
     Returns:
         list: 可疑串通网络列表
     """
-    # 查询所有公司
-    company_query = """
+    # Build company filter
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+    
+    company_query = f"""
     MATCH (c:Company)
+    {company_filter}
     RETURN id(c) as company_id
     """
     companies = execute_query(session, company_query)
@@ -228,7 +262,7 @@ def detect_collusion_network(session, min_cluster_size=3):
 
     for comm_idx, comm in enumerate(communities):
         # 分析这个集群的可疑行为
-        collusion_features = analyze_collusion_patterns(comm, session)
+        collusion_features = analyze_collusion_patterns(comm, session, periods=periods)
 
         if collusion_features["risk_score"] >= 0.5:
             suspicious_networks.append(
@@ -243,17 +277,37 @@ def detect_collusion_network(session, min_cluster_size=3):
     return suspicious_networks
 
 
-def main():
+def main(
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
+    """
+    Main function for collusion network analysis
+    
+    Args:
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
+    """
     print("=" * 70)
     print("关联方串通网络分析")
     print("=" * 70)
+    
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
 
     session = None
     try:
         session = get_nebula_session()
 
         print("\n[1/3] 构建关联关系图...")
-        suspicious_networks = detect_collusion_network(session, min_cluster_size=3)
+        suspicious_networks = detect_collusion_network(
+            session,
+            min_cluster_size=3,
+            company_ids=company_ids,
+            periods=periods,
+        )
 
         print(f"  发现可疑串通网络数: {len(suspicious_networks)}")
 
@@ -329,4 +383,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="关联方串通网络分析")
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
+    )
+    args = parser.parse_args()
+
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+
+    main(company_ids=company_ids, periods=periods)

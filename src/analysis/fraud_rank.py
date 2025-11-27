@@ -6,6 +6,7 @@
 
 import os
 import pandas as pd
+from typing import List
 from collections import defaultdict
 from typing import Optional
 from src.utils.nebula_utils import get_nebula_session, execute_query
@@ -20,7 +21,9 @@ CACHE_DIR = os.path.join(BASE_DIR, "cache")
 DEFAULT_CONFIG = FraudRankConfig()
 
 
-def calculate_init_score(company_id, legal_events, config: Optional[FraudRankConfig] = None):
+def calculate_init_score(
+    company_id, legal_events, config: Optional[FraudRankConfig] = None
+):
     """
     根据涉及的法律事件计算初始风险分数
 
@@ -42,8 +45,7 @@ def calculate_init_score(company_id, legal_events, config: Optional[FraudRankCon
     for event in legal_events:
         # 事件类型权重
         type_weight = config.event_type_weights.get(
-            event["event_type"], 
-            config.event_type_default_weight
+            event["event_type"], config.event_type_default_weight
         )
 
         # 金额权重（归一化到 0-1）
@@ -51,8 +53,7 @@ def calculate_init_score(company_id, legal_events, config: Optional[FraudRankCon
 
         # 状态权重
         status_weight = config.status_weights.get(
-            event["status"], 
-            config.status_default_weight
+            event["status"], config.status_default_weight
         )
 
         score += type_weight * amount_weight * status_weight
@@ -60,7 +61,14 @@ def calculate_init_score(company_id, legal_events, config: Optional[FraudRankCon
     return min(score, 1.0)
 
 
-def load_weighted_graph(session, use_embedding_weights=True, force_recompute=False, config: Optional[FraudRankConfig] = None):
+def load_weighted_graph(
+    session,
+    use_embedding_weights=True,
+    force_recompute=False,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+    config: Optional[FraudRankConfig] = None,
+):
     """
     从 Nebula Graph 加载图数据并构建加权邻接表
 
@@ -69,6 +77,8 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
         use_embedding_weights: 是否使用 embedding 计算的动态权重，默认 True
         force_recompute: 是否强制重新计算 embedding 权重
         config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
+        company_ids: 公司ID列表
+        periods: 时间段列表
 
     Returns:
         dict: {
@@ -79,7 +89,7 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
     """
     if config is None:
         config = DEFAULT_CONFIG
-    
+
     edge_weights = config.edge_weights
     graph = {"nodes": set(), "edges": defaultdict(list), "out_degree": defaultdict(int)}
 
@@ -91,15 +101,22 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
             session=session,
             cache_dir=CACHE_DIR,
             limit=10000,
-            force_recompute=force_recompute
+            force_recompute=force_recompute,
         )
         print(f"  已加载 {len(embedding_weights)} 条边的动态权重")
 
-    # 查询所有公司节点
-    company_query = """
-    MATCH (c:Company)
-    RETURN id(c) as company_id
-    """
+    if company_ids:
+        ids_filter = ', '.join([f"'{company_id}'" for company_id in company_ids])
+        company_query = f"""
+        MATCH (c:Company)
+        WHERE c.Company.number IN [{ids_filter}]
+        RETURN id(c) as company_id
+        """
+    else:
+        company_query = """
+        MATCH (c:Company)
+        RETURN id(c) as company_id
+        """
     companies = execute_query(session, company_query)
     for row in companies:
         company_id = row.get("company_id", "")
@@ -198,8 +215,17 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
             graph["out_degree"][from_node] += 1
 
     # 查询 PAYS 边（Company -> Transaction）
-    pays_query = """
+    periods_filter = ""
+    if periods:
+        if len(periods) == 1:
+            periods_filter = f"WHERE t.Transaction.transaction_date == '{periods[0]}'"
+        elif len(periods) == 2:
+            periods_filter = f"WHERE t.Transaction.transaction_date >= '{periods[0]}' AND t.Transaction.transaction_date <= '{periods[1]}'"
+        else:
+            raise ValueError("时间段列表长度必须为1或2")
+    pays_query = f"""
     MATCH (c:Company)-[:PAYS]->(t:Transaction)
+    {periods_filter}
     RETURN id(c) as from_node, id(t) as to_node
     """
     rows = execute_query(session, pays_query)
@@ -216,8 +242,9 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
             graph["out_degree"][from_node] += 1
 
     # 查询 RECEIVES 边（Transaction -> Company）
-    receives_query = """
+    receives_query = f"""
     MATCH (t:Transaction)-[:RECEIVES]->(c:Company)
+    {periods_filter}
     RETURN id(t) as from_node, id(c) as to_node
     """
     rows = execute_query(session, receives_query)
@@ -235,8 +262,18 @@ def load_weighted_graph(session, use_embedding_weights=True, force_recompute=Fal
 
     # 查询 PARTY_A 和 PARTY_B 边（Company -> Contract）
     # 修改说明：为了让风险从 Contract 传导给 Company，这里需要反向构建边
-    party_query = """
+    if periods:
+        if len(periods) == 1:
+            contract_periods_filter = f"WHERE con.Contract.sign_date == '{periods[0]}'"
+        elif len(periods) == 2:
+            contract_periods_filter = f"WHERE con.Contract.sign_date >= '{periods[0]}' AND con.Contract.sign_date <= '{periods[1]}'"
+        else:
+            raise ValueError("时间段列表长度必须为1或2")
+    else:
+        contract_periods_filter = ""
+    party_query = f"""
     MATCH (c:Company)-[e:PARTY_A|PARTY_B]->(con:Contract)
+    {contract_periods_filter}
     RETURN id(c) as company_id, id(con) as contract_id, type(e) as edge_type
     """
     rows = execute_query(session, party_query)
@@ -273,7 +310,7 @@ def initialize_risk_seeds(session, config: Optional[FraudRankConfig] = None):
     """
     if config is None:
         config = DEFAULT_CONFIG
-        
+
     init_scores = defaultdict(float)
 
     # 查询合同关联的法律事件，直接给合同分配初始风险
@@ -417,20 +454,32 @@ def analyze_fraud_rank_results(fraud_scores, session, top_n=50):
     return df_report
 
 
-def main(force_recompute_embedding=False, config: Optional[FraudRankConfig] = None):
+def main(
+    force_recompute_embedding=False,
+    config: Optional[FraudRankConfig] = None,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Main function for FraudRank analysis
-    
+
     Args:
         force_recompute_embedding: 是否强制重新计算 embedding 权重
         config: FraudRank 配置对象，默认使用 DEFAULT_CONFIG
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
     """
     if config is None:
         config = DEFAULT_CONFIG
-        
+
     print("=" * 60)
     print("FraudRank 欺诈风险传导分析")
     print("=" * 60)
+    
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
 
     session = None
     try:
@@ -438,7 +487,13 @@ def main(force_recompute_embedding=False, config: Optional[FraudRankConfig] = No
 
         # Step 1: 加载图数据
         print("\n[1/4] 加载图数据...")
-        graph = load_weighted_graph(session, force_recompute=force_recompute_embedding, config=config)
+        graph = load_weighted_graph(
+            session,
+            force_recompute=force_recompute_embedding,
+            config=config,
+            company_ids=company_ids,
+            periods=periods,
+        )
         print(f"  节点数: {len(graph['nodes'])}")
         print(f"  边数: {sum(len(v) for v in graph['edges'].values())}")
 
@@ -476,13 +531,32 @@ def main(force_recompute_embedding=False, config: Optional[FraudRankConfig] = No
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="FraudRank 欺诈风险传导分析")
     parser.add_argument(
         "--force-recompute",
         action="store_true",
-        help="强制重新计算 embedding 权重，忽略缓存"
+        help="强制重新计算 embedding 权重，忽略缓存",
+    )
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
     )
     args = parser.parse_args()
-    
-    main(force_recompute_embedding=args.force_recompute)
+
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+
+    main(
+        force_recompute_embedding=args.force_recompute,
+        company_ids=company_ids,
+        periods=periods,
+    )

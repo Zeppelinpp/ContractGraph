@@ -14,6 +14,7 @@
 import os
 import pandas as pd
 from collections import defaultdict
+from typing import List, Optional
 from tqdm import tqdm
 from src.utils.nebula_utils import get_nebula_session, execute_query
 
@@ -213,13 +214,25 @@ def get_cluster_controllers(cluster, session):
     return controllers
 
 
-def calculate_cluster_exposure(cluster, session):
+def calculate_cluster_exposure(
+    cluster,
+    session,
+    periods: Optional[List[str]] = None,
+):
     """Calculate credit exposure for a cluster"""
     company_ids_str = ", ".join([f'"{c}"' for c in cluster])
 
+    # Build time filter
+    periods_filter = ""
+    if periods:
+        if len(periods) == 1:
+            periods_filter = f"AND con.Contract.sign_date == '{periods[0]}'"
+        elif len(periods) == 2:
+            periods_filter = f"AND con.Contract.sign_date >= '{periods[0]}' AND con.Contract.sign_date <= '{periods[1]}'"
+
     contract_query = f"""
     MATCH (c:Company)-[:PARTY_A|PARTY_B]->(con:Contract)
-    WHERE id(c) IN [{company_ids_str}]
+    WHERE id(c) IN [{company_ids_str}] {periods_filter}
     RETURN DISTINCT id(con) as contract_id, con.Contract.amount as amount,
            con.Contract.contract_name as name
     """
@@ -348,7 +361,14 @@ def get_risk_level(score):
         return "LOW"
 
 
-def detect_shell_entity_clusters(session, min_cluster_size=2, credit_threshold=10000000, exclude_internal_orgs=True):
+def detect_shell_entity_clusters(
+    session,
+    min_cluster_size=2,
+    credit_threshold=10000000,
+    exclude_internal_orgs=True,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Detect shell entity clusters.
 
@@ -357,6 +377,8 @@ def detect_shell_entity_clusters(session, min_cluster_size=2, credit_threshold=1
         min_cluster_size: Minimum companies in a cluster
         credit_threshold: Credit exposure warning threshold
         exclude_internal_orgs: Whether to exclude internal organization clusters (ORG_xxx)
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
 
     Returns:
         list: Shell entity cluster analysis results
@@ -375,13 +397,31 @@ def detect_shell_entity_clusters(session, min_cluster_size=2, credit_threshold=1
             return org_count == len(cluster)
         clusters = [c for c in clusters if not is_internal_cluster(c)]
 
+    # Build company filter
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE c.Company.number IN [{ids_str}]"
+
     # Get company info
-    company_query = """
+    company_query = f"""
     MATCH (c:Company)
-    RETURN id(c) as company_id, c.Company.name as name, c.Company.legal_person as legal_person
+    {company_filter}
+    RETURN id(c) as company_id, c.Company.name as name, c.Company.legal_person as legal_person,
+           c.Company.number as number
     """
     rows = execute_query(session, company_query)
     company_info = {row.get("company_id", ""): row for row in rows}
+    
+    # If company_ids filter is provided, filter clusters to only include matching companies
+    if company_ids:
+        target_company_ids = set(company_info.keys())
+        filtered_clusters = []
+        for cluster in clusters:
+            filtered_cluster = [c for c in cluster if c in target_company_ids]
+            if len(filtered_cluster) >= min_cluster_size:
+                filtered_clusters.append(filtered_cluster)
+        clusters = filtered_clusters
 
     results = []
     for idx, cluster in enumerate(tqdm(clusters, desc="分析集群")):
@@ -394,7 +434,7 @@ def detect_shell_entity_clusters(session, min_cluster_size=2, credit_threshold=1
         controllers = get_cluster_controllers(cluster, session)
 
         # Calculate exposure
-        total_exposure, contract_count = calculate_cluster_exposure(cluster, session)
+        total_exposure, contract_count = calculate_cluster_exposure(cluster, session, periods=periods)
 
         # Calculate internal trade
         internal_amount, internal_trade_count = calculate_internal_trade(cluster, session)
@@ -453,10 +493,25 @@ def detect_shell_entity_clusters(session, min_cluster_size=2, credit_threshold=1
     return results
 
 
-def main():
+def main(
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
+    """
+    Main function for shell entity detection
+    
+    Args:
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
+    """
     print("=" * 70)
     print("马甲公司检测分析（集中授信爆雷风险）")
     print("=" * 70)
+    
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
 
     session = None
     try:
@@ -467,7 +522,9 @@ def main():
             session,
             min_cluster_size=2,
             credit_threshold=10000000,
-            exclude_internal_orgs=True
+            exclude_internal_orgs=True,
+            company_ids=company_ids,
+            periods=periods,
         )
 
         print(f"\n[2/4] 发现马甲公司集群数: {len(results)}")
@@ -559,5 +616,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="马甲公司检测分析")
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
+    )
+    args = parser.parse_args()
+
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+
+    main(company_ids=company_ids, periods=periods)
 

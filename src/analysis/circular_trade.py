@@ -8,10 +8,34 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 from collections import defaultdict
+from typing import List, Optional
 from src.utils.nebula_utils import get_nebula_session, execute_query
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+
+
+def build_company_filter(company_ids: Optional[List[str]] = None) -> str:
+    """Build company ID filter clause for nGQL"""
+    if not company_ids:
+        return ""
+    ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+    return f"WHERE c.Company.number IN [{ids_str}]"
+
+
+def build_periods_filter(
+    periods: Optional[List[str]] = None,
+    date_field: str = "t.Transaction.transaction_date"
+) -> str:
+    """Build time period filter clause for nGQL"""
+    if not periods:
+        return ""
+    if len(periods) == 1:
+        return f"WHERE {date_field} == '{periods[0]}'"
+    elif len(periods) == 2:
+        return f"WHERE {date_field} >= '{periods[0]}' AND {date_field} <= '{periods[1]}'"
+    else:
+        raise ValueError("periods list must have 1 or 2 elements")
 
 
 def get_related_companies(company_id, session):
@@ -67,7 +91,13 @@ def calculate_circular_trade_risk(similarity, num_dispersed, num_inter_trades):
     return similarity_score + dispersed_score + inter_trade_score
 
 
-def detect_fan_out_fan_in(session, time_window_days=180, amount_threshold=1000000):
+def detect_fan_out_fan_in(
+    session,
+    time_window_days=180,
+    amount_threshold=1000000,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     检测分散-汇聚模式的循环交易
 
@@ -75,13 +105,28 @@ def detect_fan_out_fan_in(session, time_window_days=180, amount_threshold=100000
         session: Nebula session
         time_window_days: 时间窗口（天）
         amount_threshold: 金额阈值
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
 
     Returns:
         list: 可疑模式列表
     """
-    # 查询所有资金流：付款公司 -> 交易 -> 收款公司
-    money_flow_query = """
+    # Build filter conditions
+    where_clauses = []
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        where_clauses.append(f"(payer.Company.number IN [{ids_str}] OR receiver.Company.number IN [{ids_str}])")
+    if periods:
+        if len(periods) == 1:
+            where_clauses.append(f"t.Transaction.transaction_date == '{periods[0]}'")
+        elif len(periods) == 2:
+            where_clauses.append(f"t.Transaction.transaction_date >= '{periods[0]}' AND t.Transaction.transaction_date <= '{periods[1]}'")
+    
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    
+    money_flow_query = f"""
     MATCH (payer:Company)-[:PAYS]->(t:Transaction)-[:RECEIVES]->(receiver:Company)
+    {where_clause}
     RETURN id(payer) as payer_company,
            id(receiver) as receiver_company,
            id(t) as transaction_id,
@@ -178,10 +223,25 @@ def detect_fan_out_fan_in(session, time_window_days=180, amount_threshold=100000
     return suspicious_patterns
 
 
-def main():
+def main(
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
+    """
+    Main function for circular trade detection
+    
+    Args:
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
+    """
     print("=" * 70)
     print("高级循环交易检测 - 分散汇聚模式分析")
     print("=" * 70)
+    
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
 
     session = None
     try:
@@ -192,6 +252,8 @@ def main():
             session,
             time_window_days=180,
             amount_threshold=500000,  # 50万以上
+            company_ids=company_ids,
+            periods=periods,
         )
 
         print(f"  发现可疑模式数: {len(suspicious_patterns)}")
@@ -243,4 +305,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="高级循环交易检测")
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
+    )
+    args = parser.parse_args()
+
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+
+    main(company_ids=company_ids, periods=periods)

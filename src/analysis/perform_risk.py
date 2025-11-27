@@ -9,7 +9,7 @@
 import os
 from datetime import datetime
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
 import pandas as pd
 from src.utils.nebula_utils import get_nebula_session, execute_query
 
@@ -45,26 +45,53 @@ def extract_subject_name(contract_name: str) -> str:
     return contract_name.strip()
 
 
-def find_overdue_transactions(session, current_date: datetime):
+def find_overdue_transactions(
+    session,
+    current_date: datetime,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Find transactions with payment or delivery overdue
+    
+    Args:
+        session: Nebula session
+        current_date: Current date for comparison
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围，按transaction_date过滤）
     
     Returns:
         List of dicts with transaction info and related contract/company info
     """
-    # Query all transactions
-    query = """
+    # Build transaction filter
+    where_clauses = []
+    if periods:
+        if len(periods) == 1:
+            where_clauses.append(f"t.Transaction.transaction_date == '{periods[0]}'")
+        elif len(periods) == 2:
+            where_clauses.append(f"t.Transaction.transaction_date >= '{periods[0]}' AND t.Transaction.transaction_date <= '{periods[1]}'")
+    
+    txn_filter = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    
+    query = f"""
     MATCH (t:Transaction)
+    {txn_filter}
     RETURN id(t) as transaction_id,
            properties(t) as t_props
     """
     
     transaction_results = execute_query(session, query)
     
-    # Query contracts and companies separately
-    contract_query = """
+    # Build company filter for contracts
+    company_filter = ""
+    if company_ids:
+        ids_str = ", ".join([f"'{cid}'" for cid in company_ids])
+        company_filter = f"WHERE comp.Company.number IN [{ids_str}]"
+    
+    contract_query = f"""
     MATCH (c:Contract)
     OPTIONAL MATCH (comp:Company)-[:PARTY_A|PARTY_B]->(c)
+    {company_filter}
     RETURN id(c) as contract_id,
            properties(c) as c_props,
            id(comp) as company_id,
@@ -385,7 +412,13 @@ def calculate_risk_score(company_id: str, risk_contracts: List[Dict], overdue_tr
     return min(score, 1.0)
 
 
-def analyze_perform_risk(session, current_date: datetime, top_n: int = 10):
+def analyze_perform_risk(
+    session,
+    current_date: datetime,
+    top_n: int = 10,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Main analysis function
     
@@ -393,12 +426,19 @@ def analyze_perform_risk(session, current_date: datetime, top_n: int = 10):
         session: Nebula session
         current_date: Current date for comparison
         top_n: Number of top risk companies to return
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
     
     Returns:
         DataFrame with top N risk companies
     """
     print(f"\n[1/4] 查找逾期交易...")
-    overdue_transactions = find_overdue_transactions(session, current_date)
+    overdue_transactions = find_overdue_transactions(
+        session,
+        current_date,
+        company_ids=company_ids,
+        periods=periods,
+    )
     print(f"  发现 {len(overdue_transactions)} 笔逾期交易")
     
     if not overdue_transactions:
@@ -482,12 +522,18 @@ def analyze_perform_risk(session, current_date: datetime, top_n: int = 10):
     return df_report
 
 
-def main(current_date: datetime = None):
+def main(
+    current_date: datetime = None,
+    company_ids: Optional[List[str]] = None,
+    periods: Optional[List[str]] = None,
+):
     """
     Main function for performance risk analysis
     
     Args:
         current_date: Current date for comparison. If None, uses datetime.now()
+        company_ids: 公司ID列表（按Company.number过滤）
+        periods: 时间段列表（单值或[start, end]范围）
     """
     print("=" * 60)
     print("履约关联风险检测")
@@ -498,12 +544,22 @@ def main(current_date: datetime = None):
         current_date = datetime.now()
     
     print(f"\n当前时间: {current_date.strftime('%Y-%m-%d')}")
+    if company_ids:
+        print(f"  过滤公司: {len(company_ids)} 家")
+    if periods:
+        print(f"  时间范围: {periods}")
     
     session = None
     try:
         session = get_nebula_session()
         
-        report = analyze_perform_risk(session, current_date, top_n=10)
+        report = analyze_perform_risk(
+            session,
+            current_date,
+            top_n=10,
+            company_ids=company_ids,
+            periods=periods,
+        )
         
         print("\n" + "=" * 60)
         print("分析完成！")
@@ -531,6 +587,18 @@ if __name__ == "__main__":
         default=None,
         help="指定当前日期，格式：YYYY-MM-DD（默认：当前日期）",
     )
+    parser.add_argument(
+        "--company-ids",
+        type=str,
+        default=None,
+        help="公司编号列表，逗号分隔",
+    )
+    parser.add_argument(
+        "--periods",
+        type=str,
+        default=None,
+        help="时间范围，格式：YYYY-MM-DD 或 YYYY-MM-DD,YYYY-MM-DD",
+    )
     args = parser.parse_args()
     
     current_date = None
@@ -541,5 +609,8 @@ if __name__ == "__main__":
             print(f"错误: 日期格式不正确，请使用 YYYY-MM-DD 格式")
             exit(1)
     
-    main(current_date=current_date)
+    company_ids = args.company_ids.split(",") if args.company_ids else None
+    periods = args.periods.split(",") if args.periods else None
+    
+    main(current_date=current_date, company_ids=company_ids, periods=periods)
 

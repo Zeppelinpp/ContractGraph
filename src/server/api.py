@@ -204,7 +204,7 @@ async def fraud_rank_analysis(request: FraudRankRequest):
 # ============================================================================
 
 
-@app.post("/api/contract-risk/subgraph", response_model=ContractSubGraphResponse)
+@app.post("/api/contract-risk/subgraph")
 async def get_contract_subgraph(request: ContractSubGraphRequest):
     """
     获取合同风险子图
@@ -212,7 +212,7 @@ async def get_contract_subgraph(request: ContractSubGraphRequest):
     以合同为起点，递归获取关联的法律事件、相对方公司、
     以及这些公司涉及的其他有法律事件的合同，生成交互式HTML页面。
 
-    返回的 html_url 可直接嵌入前端 iframe 中。
+    直接返回 HTML 文件，可嵌入前端 iframe 中。
     """
     session = None
     try:
@@ -224,24 +224,15 @@ async def get_contract_subgraph(request: ContractSubGraphRequest):
             session=session,
         )
 
-        subgraph = result["subgraph"]
         html_path = result["html_url"]
 
-        # 生成可访问的URL（相对路径）
-        html_filename = os.path.basename(html_path)
-        html_url = f"/api/contract-risk/view/{html_filename}"
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML文件生成失败")
 
-        return ContractSubGraphResponse(
-            success=True,
-            contract_id=request.contract_id,
-            max_depth=request.max_depth,
-            html_url=html_url,
-            node_count=len(subgraph["nodes"]),
-            edge_count=len(subgraph["edges"]),
-            nodes=[SubGraphNode(**n) for n in subgraph["nodes"]],
-            edges=[SubGraphEdge(**e) for e in subgraph["edges"]],
-        )
+        return FileResponse(html_path, media_type="text/html")
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -350,14 +341,14 @@ async def circular_trade_detection(request: CircularTradeRequest):
             session.release()
 
 
-@app.post("/api/circular-trade/subgraph", response_model=CircularTradeSubGraphResponse)
+@app.post("/api/circular-trade/subgraph")
 async def get_circular_trade_subgraph(request: CircularTradeSubGraphRequest):
     """
     获取合同关联的循环交易模式子图
 
     以合同ID为入口，查找合同的甲/乙方公司，
     以这些公司为核心检测循环交易模式，并生成交互式HTML页面。
-    返回的 html_url 可直接嵌入前端 iframe 中。
+    直接返回 HTML 文件，可嵌入前端 iframe 中。
     """
     session = None
     try:
@@ -376,36 +367,12 @@ async def get_circular_trade_subgraph(request: CircularTradeSubGraphRequest):
                 detail=result.get("message", "未检测到循环交易模式")
             )
 
-        html_filename = os.path.basename(result["html_url"])
-        html_url = f"/api/circular-trade/view/{html_filename}"
+        html_path = result["html_url"]
 
-        # Get the top pattern for stats
-        patterns = result.get("patterns", [])
-        top_pattern = patterns[0] if patterns else {}
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML文件生成失败")
 
-        node_count = (
-            1  # central company
-            + len(top_pattern.get("dispersed_companies", []))
-            + len(top_pattern.get("related_companies", []))
-            + len(top_pattern.get("contract_ids", []))
-        )
-        edge_count = len(top_pattern.get("outflow_transactions", [])) + len(
-            top_pattern.get("inflow_transactions", [])
-        )
-
-        # Collect all contract IDs from all patterns
-        all_contract_ids = list(set(
-            cid for p in patterns for cid in p.get("contract_ids", [])
-        ))
-
-        return CircularTradeSubGraphResponse(
-            success=True,
-            central_company=top_pattern.get("central_company", ""),
-            html_url=html_url,
-            node_count=node_count,
-            edge_count=edge_count,
-            contract_ids=all_contract_ids,
-        )
+        return FileResponse(html_path, media_type="text/html")
 
     except HTTPException:
         raise
@@ -527,14 +494,14 @@ async def perform_risk_analysis(request: PerformRiskRequest):
             session.release()
 
 
-@app.post("/api/perform-risk/subgraph", response_model=PerformRiskSubGraphResponse)
+@app.post("/api/perform-risk/subgraph")
 async def get_perform_risk_subgraph_api(request: PerformRiskSubGraphRequest):
     """
     获取履约风险子图
 
     以风险合同ID为入口，查找合同的相关方，
     获取这些相关方的逾期交易以及涉及的合同，生成交互式HTML页面。
-    返回的 html_url 可直接嵌入前端 iframe 中。
+    直接返回 HTML 文件，可嵌入前端 iframe 中。
     """
     session = None
     try:
@@ -563,24 +530,11 @@ async def get_perform_risk_subgraph_api(request: PerformRiskSubGraphRequest):
                 detail=result.get("message", "未找到相关数据")
             )
 
-        html_url = None
-        if result.get("html_url"):
-            html_filename = os.path.basename(result["html_url"])
-            html_url = f"/api/perform-risk/view/{html_filename}"
+        html_path = result.get("html_url")
+        if not html_path or not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML文件生成失败")
 
-        return PerformRiskSubGraphResponse(
-            success=True,
-            contract_id=request.contract_id,
-            html_url=html_url,
-            node_count=len(result.get("nodes", [])),
-            edge_count=len(result.get("edges", [])),
-            overdue_transaction_count=result.get("overdue_transaction_count", 0),
-            related_contract_count=result.get("related_contract_count", 0),
-            company_count=result.get("company_count", 0),
-            contract_ids=result.get("contract_ids", []),
-            nodes=[SubGraphNode(**n) for n in result.get("nodes", [])],
-            edges=[SubGraphEdge(**e) for e in result.get("edges", [])],
-        )
+        return FileResponse(html_path, media_type="text/html")
 
     except HTTPException:
         raise
@@ -736,14 +690,14 @@ async def external_risk_rank_analysis(request: ExternalRiskRankRequest):
             session.release()
 
 
-@app.post("/api/external-risk-rank/subgraph", response_model=ExternalRiskRankSubGraphResponse)
+@app.post("/api/external-risk-rank/subgraph")
 async def get_external_risk_subgraph_api(request: ExternalRiskRankSubGraphRequest):
     """
     获取外部风险子图
 
     以合同ID为入口，查找合同的相关方中存在经营异常/行政处罚的公司，
     获取这些公司的风险事件以及涉及的其他合同，递归展开生成交互式HTML页面。
-    返回的 html_url 可直接嵌入前端 iframe 中。
+    直接返回 HTML 文件，可嵌入前端 iframe 中。
     """
     session = None
     try:
@@ -762,24 +716,11 @@ async def get_external_risk_subgraph_api(request: ExternalRiskRankSubGraphReques
                 detail=result.get("message", "未找到相关数据")
             )
 
-        html_url = None
-        if result.get("html_url"):
-            html_filename = os.path.basename(result["html_url"])
-            html_url = f"/api/external-risk-rank/view/{html_filename}"
+        html_path = result.get("html_url")
+        if not html_path or not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML文件生成失败")
 
-        return ExternalRiskRankSubGraphResponse(
-            success=True,
-            contract_id=request.contract_id,
-            html_url=html_url,
-            max_depth=result.get("max_depth", request.max_depth),
-            node_count=result.get("node_count", 0),
-            edge_count=result.get("edge_count", 0),
-            company_count=result.get("company_count", 0),
-            risk_event_count=result.get("risk_event_count", 0),
-            contract_ids=result.get("contract_ids", []),
-            nodes=[SubGraphNode(**n) for n in result.get("nodes", [])],
-            edges=[SubGraphEdge(**e) for e in result.get("edges", [])],
-        )
+        return FileResponse(html_path, media_type="text/html")
 
     except HTTPException:
         raise
@@ -907,14 +848,14 @@ async def collusion_network_analysis(request: CollusionRequest):
             session.release()
 
 
-@app.post("/api/collusion/subgraph", response_model=CollusionSubGraphResponse)
+@app.post("/api/collusion/subgraph")
 async def get_collusion_subgraph(request: CollusionSubGraphRequest):
     """
     获取合同关联的串通网络子图
 
     以合同ID为入口，查找合同的甲/乙方公司，
     检测这些公司所在的串通网络，并生成交互式HTML页面。
-    返回的 html_url 可直接嵌入前端 iframe 中。
+    直接返回 HTML 文件，可嵌入前端 iframe 中。
     """
     session = None
     try:
@@ -937,28 +878,12 @@ async def get_collusion_subgraph(request: CollusionSubGraphRequest):
                 detail=result.get("message", "未检测到串通网络")
             )
 
-        html_filename = os.path.basename(result["html_url"])
-        html_url = f"/api/collusion/view/{html_filename}"
+        html_path = result["html_url"]
 
-        # Get the top network for stats
-        networks = result.get("networks", [])
-        top_network = networks[0] if networks else {}
+        if not os.path.exists(html_path):
+            raise HTTPException(status_code=404, detail="HTML文件生成失败")
 
-        node_count = len(top_network.get("companies", [])) + len(top_network.get("contract_ids", []))
-        edge_count = 0  # Will be computed from the HTML generation
-
-        return CollusionSubGraphResponse(
-            success=True,
-            contract_id=request.contract_id,
-            html_url=html_url,
-            network_id=top_network.get("network_id", ""),
-            node_count=node_count,
-            edge_count=edge_count,
-            company_count=len(top_network.get("companies", [])),
-            contract_ids=result.get("contract_ids", []),
-            nodes=[],  # Nodes are in the HTML
-            edges=[],  # Edges are in the HTML
-        )
+        return FileResponse(html_path, media_type="text/html")
 
     except HTTPException:
         raise

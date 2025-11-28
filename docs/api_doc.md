@@ -109,62 +109,13 @@
 | `contract_id` | string | 必填 | 合同ID（Nebula Graph 节点ID） |
 | `max_depth` | int | `3` | 递归深度，范围 1-5 |
 
-**返回结构示例：**
-```json
-{
-    "success": true,
-    "contract_id": "Contract_CON_001",
-    "max_depth": 3,
-    "html_url": "/api/contract-risk/view/contract_risk_subgraph_Contract_CON_001.html",
-    "node_count": 15,
-    "edge_count": 22,
-    "nodes": [
-        {
-            "id": "Contract_CON_001",
-            "type": "Contract",
-            "label": "采购合同-华信建材",
-            "properties": {"contract_no": "HT-2024-001", "amount": 1000000}
-        },
-        {
-            "id": "LegalEvent_CASE_001",
-            "type": "LegalEvent",
-            "label": "合同纠纷案件-1",
-            "properties": {"event_type": "Case", "status": "F"}
-        }
-    ],
-    "edges": [
-        {
-            "source": "Contract_CON_001",
-            "target": "LegalEvent_CASE_001",
-            "type": "RELATED_TO",
-            "properties": {}
-        }
-    ]
-}
-```
+**返回说明：**
 
-**字段说明：**
-- `success`: 是否成功
-- `contract_id`: 入口合同ID
-- `max_depth`: 递归深度
-- `html_url`: 可视化HTML页面URL（可嵌入iframe）
-- `node_count`: 子图节点数量
-- `edge_count`: 子图边数量
-- `nodes`: 节点列表
-  - `id`: 节点ID
-  - `type`: 节点类型（Contract/LegalEvent/Company/Person）
-  - `label`: 节点标签
-  - `properties`: 节点属性
-- `edges`: 边列表
-  - `source`: 源节点ID
-  - `target`: 目标节点ID
-  - `type`: 边类型（RELATED_TO/PARTY_A/PARTY_B/LEGAL_PERSON等）
-  - `properties`: 边属性
+直接返回 HTML 文件（`Content-Type: text/html`），可直接嵌入前端 iframe 中展示交互式图谱。
 
-**查看HTML页面：**
-```bash
-open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contract_CON_001.html"
-```
+**错误响应：**
+- `404`: 未找到相关数据或 HTML 文件生成失败
+- `500`: 服务器内部错误
 
 ### 循环交易检测
 
@@ -233,7 +184,7 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 
 以合同ID为入口，查找合同甲/乙方公司，检测以该公司为核心的循环交易模式，并生成交互式HTML可视化页面。
 
-请求参数：
+**POST 请求参数：**
 ```json
 {
     "contract_id": "Contract_CON_001",
@@ -242,25 +193,19 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 }
 ```
 
-返回结构示例：
-```json
-{
-    "success": true,
-    "central_company": "Company_ORG002",
-    "html_url": "/api/circular-trade/view/circular_trade_pattern_Company_ORG002.html",
-    "node_count": 8,
-    "edge_count": 12,
-    "contract_ids": ["CON_001", "CON_005"]
-}
-```
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `contract_id` | string | 必填 | 合同ID（Nebula Graph 节点ID） |
+| `time_window_days` | int | `180` | 时间窗口（天） |
+| `amount_threshold` | number | `500000.0` | 金额阈值（元） |
 
-字段说明：
-- `success`: 是否成功检测到循环交易模式
-- `central_company`: 检测到的核心公司ID
-- `html_url`: 可视化HTML页面URL（可嵌入iframe）
-- `node_count`: 子图节点数量
-- `edge_count`: 子图边数量
-- `contract_ids`: 涉及的合同ID列表
+**返回说明：**
+
+直接返回 HTML 文件（`Content-Type: text/html`），可直接嵌入前端 iframe 中展示交互式图谱。
+
+**错误响应：**
+- `404`: 未检测到循环交易模式或 HTML 文件生成失败
+- `500`: 服务器内部错误
 
 ### 履约能力风险分析（外部风险事件传导分析）
 
@@ -353,92 +298,13 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 | `max_depth` | int | `2` | 递归深度，范围 1-4 |
 | `risk_type` | string | `"all"` | 风险类型：`admin_penalty`、`business_abnormal`、`all` |
 
-**返回结构示例：**
-```json
-{
-    "success": true,
-    "contract_id": "Contract_CON_001",
-    "html_url": "/api/external-risk-rank/view/external_risk_subgraph_Contract_CON_001.html",
-    "max_depth": 2,
-    "node_count": 18,
-    "edge_count": 25,
-    "company_count": 5,
-    "risk_event_count": 8,
-    "contract_ids": ["CON_001", "CON_002", "CON_005"],
-    "nodes": [
-        {
-            "id": "Contract_CON_001",
-            "type": "Contract",
-            "label": "采购合同-华信建材",
-            "properties": {"contract_no": "HT-2024-001", "amount": 1000000, "depth": 0}
-        },
-        {
-            "id": "Company_ORG001",
-            "type": "Company",
-            "label": "中建华东分公司",
-            "properties": {"name": "中建华东分公司", "credit_code": "91310000XXX"}
-        },
-        {
-            "id": "AdminPenalty_AP001",
-            "type": "AdminPenalty",
-            "label": "行政处罚-AP_2024_001",
-            "properties": {"event_no": "AP_2024_001", "amount": 50000, "risk_score": 0.65}
-        },
-        {
-            "id": "BusinessAbnormal_BA001",
-            "type": "BusinessAbnormal",
-            "label": "经营异常-BA_2024_003",
-            "properties": {"event_no": "BA_2024_003", "risk_score": 0.72}
-        }
-    ],
-    "edges": [
-        {
-            "source": "Company_ORG001",
-            "target": "Contract_CON_001",
-            "type": "PARTY_A",
-            "properties": {}
-        },
-        {
-            "source": "AdminPenalty_AP001",
-            "target": "Company_ORG001",
-            "type": "ADMIN_PENALTY_OF",
-            "properties": {}
-        },
-        {
-            "source": "BusinessAbnormal_BA001",
-            "target": "Company_ORG001",
-            "type": "BUSINESS_ABNORMAL_OF",
-            "properties": {}
-        }
-    ]
-}
-```
+**返回说明：**
 
-**字段说明：**
-- `success`: 是否成功
-- `contract_id`: 入口合同ID
-- `html_url`: 可视化HTML页面URL（可嵌入iframe）
-- `max_depth`: 递归深度
-- `node_count`: 子图节点数量
-- `edge_count`: 子图边数量
-- `company_count`: 相关公司数量
-- `risk_event_count`: 风险事件数量（行政处罚 + 经营异常）
-- `contract_ids`: 关联的风险合同ID列表
-- `nodes`: 节点列表
-  - `id`: 节点ID
-  - `type`: 节点类型（Contract/Company/AdminPenalty/BusinessAbnormal）
-  - `label`: 节点标签
-  - `properties`: 节点属性
-- `edges`: 边列表
-  - `source`: 源节点ID
-  - `target`: 目标节点ID
-  - `type`: 边类型（PARTY_A/PARTY_B/ADMIN_PENALTY_OF/BUSINESS_ABNORMAL_OF）
-  - `properties`: 边属性
+直接返回 HTML 文件（`Content-Type: text/html`），可直接嵌入前端 iframe 中展示交互式图谱。
 
-**查看HTML页面：**
-```bash
-open "http://localhost:8000/api/external-risk-rank/view/external_risk_subgraph_Contract_CON_001.html"
-```
+**错误响应：**
+- `404`: 未找到相关数据或 HTML 文件生成失败
+- `500`: 服务器内部错误
 
 ### 履约关联风险分析
 
@@ -512,80 +378,14 @@ open "http://localhost:8000/api/external-risk-rank/view/external_risk_subgraph_C
 | `contract_id` | string | 必填 | 风险合同ID（Nebula Graph 节点ID） |
 | `current_date` | string | 今天 | 当前日期，格式：YYYY-MM-DD |
 
-**返回结构示例：**
-```json
-{
-    "success": true,
-    "contract_id": "Contract_CON_001",
-    "html_url": "/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html",
-    "node_count": 12,
-    "edge_count": 18,
-    "overdue_transaction_count": 5,
-    "related_contract_count": 3,
-    "company_count": 2,
-    "contract_ids": ["CON_002", "CON_003", "CON_005"],
-    "nodes": [
-        {
-            "id": "Contract_CON_001",
-            "type": "Contract",
-            "label": "采购合同-华信建材",
-            "properties": {"contract_no": "HT-2024-001", "is_input": true}
-        },
-        {
-            "id": "Company_ORG001",
-            "type": "Company",
-            "label": "中建华东分公司",
-            "properties": {"name": "中建华东分公司", "credit_code": "91310000XXX"}
-        },
-        {
-            "id": "TXN_001",
-            "type": "Transaction",
-            "label": "逾期15天",
-            "properties": {"overdue_type": "收款逾期", "overdue_days": 15, "amount": 500000}
-        }
-    ],
-    "edges": [
-        {
-            "source": "Company_ORG001",
-            "target": "Contract_CON_001",
-            "type": "PARTY",
-            "properties": {}
-        },
-        {
-            "source": "TXN_001",
-            "target": "Company_ORG001",
-            "type": "OVERDUE_FOR",
-            "properties": {"overdue_type": "收款逾期"}
-        }
-    ]
-}
-```
+**返回说明：**
 
-**字段说明：**
-- `success`: 是否成功
-- `contract_id`: 入口合同ID
-- `html_url`: 可视化HTML页面URL（可嵌入iframe）
-- `node_count`: 子图节点数量
-- `edge_count`: 子图边数量
-- `overdue_transaction_count`: 逾期交易数量
-- `related_contract_count`: 关联的逾期合同数量
-- `company_count`: 相关公司数量
-- `contract_ids`: 关联的逾期合同ID列表
-- `nodes`: 节点列表
-  - `id`: 节点ID
-  - `type`: 节点类型（Contract/Company/Transaction）
-  - `label`: 节点标签
-  - `properties`: 节点属性
-- `edges`: 边列表
-  - `source`: 源节点ID
-  - `target`: 目标节点ID
-  - `type`: 边类型（PARTY/OVERDUE_FOR/BELONGS_TO）
-  - `properties`: 边属性
+直接返回 HTML 文件（`Content-Type: text/html`），可直接嵌入前端 iframe 中展示交互式图谱。
 
-**查看HTML页面：**
-```bash
-open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html"
-```
+**错误响应：**
+- `400`: 日期格式不正确，请使用 YYYY-MM-DD 格式
+- `404`: 未找到相关数据或 HTML 文件生成失败
+- `500`: 服务器内部错误
 
 ### 关联方串通网络分析
 
@@ -671,38 +471,13 @@ open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract
 | `min_cluster_size` | int | `3` | 最小集群大小，范围 2-10 |
 | `risk_score_threshold` | number | `0.5` | 风险分数阈值，范围 0-1 |
 
-**返回结构示例：**
-```json
-{
-    "success": true,
-    "contract_id": "Contract_CON_001",
-    "html_url": "/api/collusion/view/collusion_network_NETWORK_1.html",
-    "network_id": "NETWORK_1",
-    "node_count": 12,
-    "edge_count": 18,
-    "company_count": 3,
-    "contract_ids": ["CON_001", "CON_002", "CON_005"],
-    "nodes": [],
-    "edges": []
-}
-```
+**返回说明：**
 
-**字段说明：**
-- `success`: 是否成功检测到串通网络
-- `contract_id`: 入口合同ID
-- `html_url`: 可视化HTML页面URL（可嵌入iframe）
-- `network_id`: 检测到的最高风险网络ID
-- `node_count`: 子图节点数量
-- `edge_count`: 子图边数量
-- `company_count`: 网络中公司数量
-- `contract_ids`: 涉及的合同ID列表
-- `nodes`: 节点列表（详细数据在HTML中）
-- `edges`: 边列表（详细数据在HTML中）
+直接返回 HTML 文件（`Content-Type: text/html`），可直接嵌入前端 iframe 中展示交互式图谱。
 
-**查看HTML页面：**
-```bash
-open "http://localhost:8000/api/collusion/view/collusion_network_NETWORK_1.html"
-```
+**错误响应：**
+- `404`: 未检测到串通网络或 HTML 文件生成失败
+- `500`: 服务器内部错误
 
 ## 参数清单
 

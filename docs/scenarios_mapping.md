@@ -8,7 +8,6 @@
 | 履约能力风险 | 高风险舆情聚合风险 | Negative-Cluster Risk | 司法、行政、舆情等多维负面信号命中，触发"聚合预警"，合同履约概率快速下降。 | ✅ 已支持 | `external_risk_rank.py` |
 | 法务风险分析 | 诉讼传染风险 | Lit-Contagion Risk | 只要关联公司或个人被诉，风险会沿股权、法人、交易边"传染"到本公司合同。 | ✅ 已支持 | `fraud_rank.py` |
 | 义务履约风险评估 | 违约金敞口风险 | Penalty-Exposure Risk | 合同已到期却仍未完结，一旦触发违约金条款，公司将面临大额敞口。 | ⏳ 待完成 | 需要补充合同违约金额字段 |
-| 相对方信用超额风险 | 集中授信爆雷风险 | Credit-Concentration Risk | 同一控制人/电话背后隐藏多家"马甲"公司，集中授信超过限额，随时集体爆雷。 | ✅ 已支持 | `shell_entity.py` |
 | 循环交易检测 | 虚假贸易自融风险 | Circular-Trade Risk | 资金先转出再原路回流，构造虚假贸易背景，实质为自融或套取银行授信。 | ✅ 已支持 | `circular_trade.py` |
 | 关联方串通网络分析 | 围标串标风险 | Bid-Rigging Network Risk | 多家关联公司轮流中标、金额雷同且卡审批阈值，涉嫌围标串标，导致采购成本虚高。 | ✅ 已支持 | `collusion.py` |
 

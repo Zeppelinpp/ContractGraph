@@ -587,6 +587,123 @@ open "http://localhost:8000/api/external-risk-rank/view/external_risk_subgraph_C
 open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html"
 ```
 
+### 关联方串通网络分析
+
+场景类型：`collusion`
+
+检测关联方串通网络，包括轮流中标、围标等模式。通过分析公司之间的法人关系、控股关系，识别可能存在串通行为的公司集群。
+
+返回结构示例：
+```json
+{
+    "type": "collusion",
+    "count": 15,
+    "contract_ids": ["CON_001", "CON_002", "CON_003", ...],
+    "details": {
+        "network_list": [
+            {
+                "network_id": "NETWORK_1",
+                "companies": ["Company_ORG001", "Company_ORG002", "Company_SUP001"],
+                "size": 3,
+                "risk_score": 0.72,
+                "rotation_score": 0.85,
+                "amount_similarity": 0.78,
+                "threshold_ratio": 0.25,
+                "network_density": 0.67,
+                "contract_count": 8,
+                "total_amount": 5000000.0,
+                "avg_amount": 625000.0,
+                "contract_ids": ["CON_001", "CON_002", "CON_005"]
+            }
+        ],
+        "metadata": {
+            "network_count": 5,
+            "contract_count": 15,
+            "min_cluster_size": 3,
+            "risk_score_threshold": 0.5,
+            "timestamp": "2024-01-20T10:30:00.000000",
+            "execution_time": 1.85
+        }
+    }
+}
+```
+
+字段说明：
+- `network_list`: 可疑串通网络列表，按风险分数倒序排列
+  - `network_id`: 网络ID
+  - `companies`: 网络中的公司ID列表
+  - `size`: 网络中公司数量
+  - `risk_score`: 综合风险分数（0-1，越高风险越大）
+  - `rotation_score`: 轮换分数（0-1，越高表示中标越均匀，越像轮流中标）
+  - `amount_similarity`: 金额相似度（0-1，越高表示合同金额越相近）
+  - `threshold_ratio`: 卡阈值比例（合同金额刻意卡在审批阈值附近的比例）
+  - `network_density`: 网络密度（公司之间关联关系的紧密程度）
+  - `contract_count`: 涉及合同数量
+  - `total_amount`: 涉及金额总计（元）
+  - `avg_amount`: 平均合同金额（元）
+  - `contract_ids`: 涉及的合同ID列表
+- `metadata`: 分析元数据
+  - `network_count`: 检测到的可疑网络数量
+  - `contract_count`: 涉及的合同数量
+  - `min_cluster_size`: 检测使用的最小集群大小
+  - `risk_score_threshold`: 检测使用的风险分数阈值
+  - `timestamp`: 分析时间戳
+  - `execution_time`: 执行耗时（秒）
+
+#### 串通网络子图可视化
+
+接口：`POST /api/collusion/subgraph`
+
+以合同ID为入口，查找合同甲/乙方公司，检测这些公司所在的串通网络，并生成交互式HTML可视化页面。
+
+**POST 请求参数：**
+```json
+{
+    "contract_id": "Contract_CON_001",
+    "min_cluster_size": 3,
+    "risk_score_threshold": 0.5
+}
+```
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `contract_id` | string | 必填 | 合同ID（Nebula Graph 节点ID） |
+| `min_cluster_size` | int | `3` | 最小集群大小，范围 2-10 |
+| `risk_score_threshold` | number | `0.5` | 风险分数阈值，范围 0-1 |
+
+**返回结构示例：**
+```json
+{
+    "success": true,
+    "contract_id": "Contract_CON_001",
+    "html_url": "/api/collusion/view/collusion_network_NETWORK_1.html",
+    "network_id": "NETWORK_1",
+    "node_count": 12,
+    "edge_count": 18,
+    "company_count": 3,
+    "contract_ids": ["CON_001", "CON_002", "CON_005"],
+    "nodes": [],
+    "edges": []
+}
+```
+
+**字段说明：**
+- `success`: 是否成功检测到串通网络
+- `contract_id`: 入口合同ID
+- `html_url`: 可视化HTML页面URL（可嵌入iframe）
+- `network_id`: 检测到的最高风险网络ID
+- `node_count`: 子图节点数量
+- `edge_count`: 子图边数量
+- `company_count`: 网络中公司数量
+- `contract_ids`: 涉及的合同ID列表
+- `nodes`: 节点列表（详细数据在HTML中）
+- `edges`: 边列表（详细数据在HTML中）
+
+**查看HTML页面：**
+```bash
+open "http://localhost:8000/api/collusion/view/collusion_network_NETWORK_1.html"
+```
+
 ## 参数清单
 
 ### 法务风险分析（诉讼传染风险）- 参数配置
@@ -767,6 +884,66 @@ open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract
         "damping": 0.85,
         "edge_weights": { "CONTROLS": 0.9, "ADMIN_PENALTY_OF": 0.95 },
         "admin_penalty_amount_max": 500000.0
+    }
+}
+```
+
+### 关联方串通网络分析 - 参数配置
+
+场景类型：`collusion`
+
+检测关联方串通网络，包括轮流中标、围标等模式。
+
+**params 参数说明：**
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `type` | string | `"collusion"` | 场景类型标识 |
+| `top_n` | int | `50` | 返回 top N 结果 |
+| `min_cluster_size` | int | `3` | 最小集群大小，至少需要这么多公司才能形成可疑网络，范围 2-10 |
+| `risk_score_threshold` | number | `0.5` | 风险分数阈值，高于此值的网络被标记为可疑，范围 0-1 |
+| `approval_thresholds` | array | `[1000000, 3000000, 5000000, 10000000]` | 审批金额阈值列表（元），用于检测刻意卡阈值的行为 |
+| `threshold_margin` | number | `0.05` | 阈值检测边距比例，金额在 threshold*(1-margin) 到 threshold 之间视为卡阈值 |
+| `feature_weights` | object | 见下方 | 串通风险评分各特征的权重配置 |
+
+**feature_weights 默认值：**
+```json
+{
+    "rotation": 0.3,           // 轮换分数权重
+    "amount_similarity": 0.2,  // 金额相似度权重
+    "threshold_ratio": 0.2,    // 卡阈值比例权重
+    "network_density": 0.2,    // 网络密度权重
+    "strong_relation": 0.1     // 强关联关系权重
+}
+```
+
+**请求示例（使用默认参数）：**
+```json
+{
+    "orgs": ["org_001", "org_002"],
+    "period": ["2024-01-01", "2024-12-31"],
+    "params": { "type": "collusion" }
+}
+```
+
+**请求示例（自定义参数）：**
+```json
+{
+    "orgs": ["org_001"],
+    "period": ["2024-01-01", "2024-06-30"],
+    "params": {
+        "type": "collusion",
+        "top_n": 100,
+        "min_cluster_size": 2,
+        "risk_score_threshold": 0.4,
+        "approval_thresholds": [500000, 1000000, 3000000, 5000000],
+        "threshold_margin": 0.08,
+        "feature_weights": {
+            "rotation": 0.35,
+            "amount_similarity": 0.25,
+            "threshold_ratio": 0.15,
+            "network_density": 0.15,
+            "strong_relation": 0.1
+        }
     }
 }
 ```

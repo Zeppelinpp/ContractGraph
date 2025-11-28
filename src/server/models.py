@@ -1,7 +1,7 @@
 from typing import List, Union, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig, CollusionConfig
 
 
 # ============================================================================
@@ -311,5 +311,65 @@ class ExternalRiskRankSubGraphResponse(BaseModel):
     company_count: int
     risk_event_count: int
     contract_ids: List[str] = Field(default=[], description="关联的风险合同ID列表")
+    nodes: List[SubGraphNode] = Field(default=[], description="子图节点")
+    edges: List[SubGraphEdge] = Field(default=[], description="子图边")
+
+
+# ============================================================================
+# 关联方串通网络分析相关模型
+# ============================================================================
+
+
+class CollusionParams(CollusionConfig):
+    """关联方串通网络分析算法参数（继承自 CollusionConfig，新增API专用字段）"""
+
+    type: str = Field(default="collusion", description="场景类型")
+    top_n: int = Field(default=50, description="返回 top N 结果")
+
+
+class CollusionRequest(BaseRequest):
+    """关联方串通网络分析请求"""
+
+    params: Optional[CollusionParams] = Field(
+        default=None, description="关联方串通网络分析算法参数"
+    )
+
+
+class CollusionNetworkItem(BaseModel):
+    """串通网络项"""
+
+    network_id: str = Field(..., description="网络ID")
+    companies: List[str] = Field(..., description="网络中的公司ID列表")
+    size: int = Field(..., description="网络中公司数量")
+    risk_score: float = Field(..., description="风险分数")
+    rotation_score: float = Field(default=0, description="轮换分数")
+    amount_similarity: float = Field(default=0, description="金额相似度")
+    threshold_ratio: float = Field(default=0, description="卡阈值比例")
+    network_density: float = Field(default=0, description="网络密度")
+    contract_count: int = Field(default=0, description="涉及合同数量")
+    total_amount: float = Field(default=0, description="涉及金额总计")
+    avg_amount: float = Field(default=0, description="平均合同金额")
+    contract_ids: List[str] = Field(default=[], description="涉及的合同ID列表")
+
+
+class CollusionSubGraphRequest(BaseModel):
+    """串通网络子图请求"""
+
+    contract_id: str = Field(..., description="合同ID（Nebula Graph 节点ID）")
+    min_cluster_size: int = Field(default=3, ge=2, le=10, description="最小集群大小")
+    risk_score_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="风险分数阈值")
+
+
+class CollusionSubGraphResponse(BaseModel):
+    """串通网络子图响应"""
+
+    success: bool
+    contract_id: str
+    html_url: Optional[str]
+    network_id: str = Field(default="", description="最高风险网络ID")
+    node_count: int
+    edge_count: int
+    company_count: int
+    contract_ids: List[str] = Field(default=[], description="关联的合同ID列表")
     nodes: List[SubGraphNode] = Field(default=[], description="子图节点")
     edges: List[SubGraphEdge] = Field(default=[], description="子图边")

@@ -25,6 +25,10 @@ from src.analysis.circular_trade import (
     detect_fan_out_fan_in,
     detect_circular_trade_by_contract,
 )
+from src.analysis.collusion import (
+    detect_collusion_network,
+    detect_collusion_by_contract,
+)
 from src.analysis.perform_risk import (
     analyze_perform_risk,
     get_perform_risk_subgraph,
@@ -61,8 +65,13 @@ from src.server.models import (
     ExternalRiskCompanyItem,
     ExternalRiskRankSubGraphRequest,
     ExternalRiskRankSubGraphResponse,
+    CollusionRequest,
+    CollusionParams,
+    CollusionNetworkItem,
+    CollusionSubGraphRequest,
+    CollusionSubGraphResponse,
 )
-from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig, CollusionConfig
 from src.utils.embedding import load_edge_weights
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
@@ -814,6 +823,185 @@ async def view_external_risk_html(filename: str):
 
 
 # ============================================================================
+# 关联方串通网络分析 API
+# ============================================================================
+
+
+@app.post("/api/collusion", response_model=BaseResponse)
+async def collusion_network_analysis(request: CollusionRequest):
+    """
+    关联方串通网络分析
+
+    检测关联方串通网络，包括轮流中标、围标等模式。
+    返回可疑串通网络列表（按风险分数倒序），包含涉及的合同ID。
+    """
+    session = None
+    start_time = time.time()
+    try:
+        session = get_nebula_session()
+
+        params = request.params or CollusionParams()
+        config = CollusionConfig(
+            min_cluster_size=params.min_cluster_size,
+            risk_score_threshold=params.risk_score_threshold,
+            approval_thresholds=params.approval_thresholds,
+            threshold_margin=params.threshold_margin,
+            feature_weights=params.feature_weights,
+        )
+
+        suspicious_networks = detect_collusion_network(
+            session=session,
+            company_ids=request.orgs,
+            periods=request.period,
+            config=config,
+        )
+
+        # Sort by risk_score descending and limit to top_n
+        sorted_networks = sorted(
+            suspicious_networks, key=lambda x: x["risk_score"], reverse=True
+        )[:params.top_n]
+
+        network_list = [
+            CollusionNetworkItem(
+                network_id=n["network_id"],
+                companies=n["companies"],
+                size=n["size"],
+                risk_score=n["risk_score"],
+                rotation_score=n.get("rotation_score", 0),
+                amount_similarity=n.get("amount_similarity", 0),
+                threshold_ratio=n.get("threshold_ratio", 0),
+                network_density=n.get("network_density", 0),
+                contract_count=n.get("contract_count", 0),
+                total_amount=n.get("total_amount", 0),
+                avg_amount=n.get("avg_amount", 0),
+                contract_ids=n.get("contract_ids", []),
+            )
+            for n in sorted_networks
+        ]
+
+        # Collect all contract IDs from all networks
+        all_contract_ids = list(set(
+            cid for n in network_list for cid in n.contract_ids
+        ))
+
+        return BaseResponse(
+            type="collusion",
+            count=len(all_contract_ids),
+            contract_ids=all_contract_ids,
+            details={
+                "network_list": [n.model_dump() for n in network_list],
+                "metadata": {
+                    "network_count": len(network_list),
+                    "contract_count": len(all_contract_ids),
+                    "min_cluster_size": config.min_cluster_size,
+                    "risk_score_threshold": config.risk_score_threshold,
+                    "timestamp": datetime.now().isoformat(),
+                    "execution_time": round(time.time() - start_time, 2),
+                },
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.post("/api/collusion/subgraph", response_model=CollusionSubGraphResponse)
+async def get_collusion_subgraph(request: CollusionSubGraphRequest):
+    """
+    获取合同关联的串通网络子图
+
+    以合同ID为入口，查找合同的甲/乙方公司，
+    检测这些公司所在的串通网络，并生成交互式HTML页面。
+    返回的 html_url 可直接嵌入前端 iframe 中。
+    """
+    session = None
+    try:
+        session = get_nebula_session()
+
+        config = CollusionConfig(
+            min_cluster_size=request.min_cluster_size,
+            risk_score_threshold=request.risk_score_threshold,
+        )
+
+        result = detect_collusion_by_contract(
+            session=session,
+            contract_id=request.contract_id,
+            config=config,
+        )
+
+        if not result.get("html_url"):
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", "未检测到串通网络")
+            )
+
+        html_filename = os.path.basename(result["html_url"])
+        html_url = f"/api/collusion/view/{html_filename}"
+
+        # Get the top network for stats
+        networks = result.get("networks", [])
+        top_network = networks[0] if networks else {}
+
+        node_count = len(top_network.get("companies", [])) + len(top_network.get("contract_ids", []))
+        edge_count = 0  # Will be computed from the HTML generation
+
+        return CollusionSubGraphResponse(
+            success=True,
+            contract_id=request.contract_id,
+            html_url=html_url,
+            network_id=top_network.get("network_id", ""),
+            node_count=node_count,
+            edge_count=edge_count,
+            company_count=len(top_network.get("companies", [])),
+            contract_ids=result.get("contract_ids", []),
+            nodes=[],  # Nodes are in the HTML
+            edges=[],  # Edges are in the HTML
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.get("/api/collusion/subgraph/{contract_id}")
+async def get_collusion_subgraph_by_id(
+    contract_id: str,
+    min_cluster_size: int = Query(default=3, ge=2, le=10, description="最小集群大小"),
+    risk_score_threshold: float = Query(default=0.5, ge=0.0, le=1.0, description="风险分数阈值"),
+):
+    """
+    GET 方式获取串通网络子图（便于前端直接调用）
+    """
+    request = CollusionSubGraphRequest(
+        contract_id=contract_id,
+        min_cluster_size=min_cluster_size,
+        risk_score_threshold=risk_score_threshold,
+    )
+    return await get_collusion_subgraph(request)
+
+
+@app.get("/api/collusion/view/{filename}")
+async def view_collusion_html(filename: str):
+    """
+    提供串通网络 HTML 文件访问
+
+    前端可通过 iframe 嵌入此 URL 展示交互式图谱
+    """
+    file_path = os.path.join(REPORTS_DIR, filename)
+
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
+# ============================================================================
 # 健康检查
 # ============================================================================
 
@@ -846,6 +1034,10 @@ async def root():
             "external_risk_rank_subgraph": "POST /api/external-risk-rank/subgraph",
             "external_risk_rank_subgraph_get": "GET /api/external-risk-rank/subgraph/{contract_id}",
             "external_risk_rank_view": "GET /api/external-risk-rank/view/{filename}",
+            "collusion": "POST /api/collusion",
+            "collusion_subgraph": "POST /api/collusion/subgraph",
+            "collusion_subgraph_get": "GET /api/collusion/subgraph/{contract_id}",
+            "collusion_view": "GET /api/collusion/view/{filename}",
         },
     }
 

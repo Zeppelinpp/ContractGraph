@@ -285,3 +285,68 @@ class ExternalRiskRankConfig(BaseModel):
         },
         description="风险等级划分阈值"
     )
+
+
+class CollusionConfig(BaseModel):
+    """
+    关联方串通网络分析的参数配置模型
+    """
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "min_cluster_size": 3,
+                "risk_score_threshold": 0.5,
+                "approval_thresholds": [1000000, 3000000, 5000000, 10000000],
+                "threshold_margin": 0.05,
+                "feature_weights": {
+                    "rotation": 0.3,
+                    "amount_similarity": 0.2,
+                    "threshold_ratio": 0.2,
+                    "network_density": 0.2,
+                    "strong_relation": 0.1,
+                },
+            }
+        }
+    )
+    
+    # 最小集群大小
+    min_cluster_size: int = Field(
+        default=3,
+        ge=2,
+        description="最小集群大小，至少需要这么多公司才能形成可疑网络"
+    )
+    
+    # 风险分数阈值
+    risk_score_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="风险分数阈值，高于此值的网络被标记为可疑"
+    )
+    
+    # 审批金额阈值列表
+    approval_thresholds: list = Field(
+        default=[1000000, 3000000, 5000000, 10000000],
+        description="审批金额阈值列表，用于检测刻意卡阈值的行为"
+    )
+    
+    # 阈值检测边距
+    threshold_margin: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.2,
+        description="阈值检测的边距比例，金额在 threshold*(1-margin) 到 threshold 之间视为卡阈值"
+    )
+    
+    # 特征权重配置
+    feature_weights: Dict[str, float] = Field(
+        default={
+            "rotation": 0.3,         # 轮换分数权重
+            "amount_similarity": 0.2, # 金额相似度权重
+            "threshold_ratio": 0.2,   # 卡阈值比例权重
+            "network_density": 0.2,   # 网络密度权重
+            "strong_relation": 0.1,   # 强关联关系权重
+        },
+        description="串通风险评分各特征的权重配置"
+    )

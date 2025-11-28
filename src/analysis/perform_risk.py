@@ -778,7 +778,7 @@ def generate_perform_risk_subgraph_html(
     """
     生成履约风险子图的交互式HTML页面
     """
-    safe_id = contract_id.replace('"', '').replace("'", "")
+    safe_id = contract_id.replace('"', '').replace("'", "").replace("/", "_")
     output_filename = f"perform_risk_subgraph_{safe_id}.html"
     
     os.makedirs(REPORTS_DIR, exist_ok=True)
@@ -786,6 +786,11 @@ def generate_perform_risk_subgraph_html(
     
     nodes_json = json.dumps(nodes, ensure_ascii=False)
     edges_json = json.dumps(edges, ensure_ascii=False)
+    
+    # Count by type
+    contract_count = sum(1 for n in nodes if n["type"] == "Contract")
+    company_count = sum(1 for n in nodes if n["type"] == "Company")
+    transaction_count = sum(1 for n in nodes if n["type"] == "Transaction")
     
     html_content = f'''<!DOCTYPE html>
 <html lang="zh-CN">
@@ -800,135 +805,369 @@ def generate_perform_risk_subgraph_html(
             padding: 0;
             box-sizing: border-box;
         }}
+        
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e0e0e0;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 
+                         'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
+            color: #e8e8e8;
         }}
+        
         .container {{
             max-width: 1600px;
             margin: 0 auto;
             padding: 20px;
         }}
+        
         header {{
             text-align: center;
-            padding: 20px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding: 30px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             margin-bottom: 20px;
         }}
+        
         header h1 {{
-            font-size: 1.8rem;
-            color: #00d9ff;
-            margin-bottom: 8px;
+            font-size: 2.2em;
+            font-weight: 600;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
         }}
+        
         header p {{
-            color: #888;
-            font-size: 0.9rem;
+            color: #8892b0;
+            font-size: 1.1em;
         }}
+        
         .stats-bar {{
             display: flex;
             justify-content: center;
             gap: 40px;
-            padding: 15px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-            margin-bottom: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
         }}
+        
         .stat-item {{
             text-align: center;
         }}
+        
         .stat-value {{
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #00ff88;
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #ff6b6b;
         }}
-        .stat-label {{
-            font-size: 0.8rem;
-            color: #888;
-            margin-top: 4px;
+        
+        .stat-value.warning {{
+            color: #ffa502;
         }}
-        .main-content {{
-            display: flex;
-            gap: 20px;
-            height: calc(100vh - 220px);
-        }}
-        .sidebar {{
-            width: 280px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-            padding: 15px;
-            overflow-y: auto;
-        }}
-        .legend {{
-            margin-bottom: 20px;
-        }}
-        .legend h3 {{
-            font-size: 0.9rem;
-            margin-bottom: 10px;
+        
+        .stat-value.info {{
             color: #00d9ff;
         }}
+        
+        .stat-value.success {{
+            color: #00ff88;
+        }}
+        
+        .stat-value.purple {{
+            color: #a855f7;
+        }}
+        
+        .stat-label {{
+            font-size: 0.9em;
+            color: #8892b0;
+            margin-top: 5px;
+        }}
+        
+        .main-content {{
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }}
+        
+        .sidebar {{
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+        }}
+        
+        .sidebar h3 {{
+            font-size: 1.1em;
+            color: #ff6b6b;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }}
+        
+        .legend {{
+            margin-bottom: 25px;
+        }}
+        
         .legend-item {{
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 5px 0;
-            font-size: 0.85rem;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 0.9em;
         }}
+        
         .legend-dot {{
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
+            flex-shrink: 0;
         }}
+        
+        .node-list {{
+            max-height: 400px;
+            overflow-y: auto;
+        }}
+        
+        .node-item {{
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }}
+        
+        .node-item:hover {{
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(3px);
+        }}
+        
+        .node-item.active {{
+            background: rgba(255, 107, 107, 0.1);
+            border-left-color: #ff6b6b;
+        }}
+        
+        .node-item-type {{
+            font-size: 0.75em;
+            color: #8892b0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .node-item-label {{
+            font-size: 0.95em;
+            color: #e8e8e8;
+            margin-top: 3px;
+            word-break: break-word;
+        }}
+        
         .graph-panel {{
-            flex: 1;
-            background: rgba(255,255,255,0.03);
-            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
             overflow: hidden;
-            position: relative;
         }}
+        
+        .graph-toolbar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }}
+        
+        .graph-toolbar h3 {{
+            color: #e8e8e8;
+            font-size: 1em;
+        }}
+        
+        .toolbar-buttons {{
+            display: flex;
+            gap: 10px;
+        }}
+        
+        .btn {{
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            background: rgba(255, 255, 255, 0.1);
+            color: #e8e8e8;
+        }}
+        
+        .btn:hover {{
+            background: rgba(255, 255, 255, 0.2);
+        }}
+        
+        .btn-primary {{
+            background: linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%);
+            color: #1a1a2e;
+            font-weight: 600;
+        }}
+        
+        .btn-primary:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(255, 107, 107, 0.3);
+        }}
+        
         #graph-svg {{
             width: 100%;
-            height: 100%;
+            height: 700px;
+            background: radial-gradient(circle at center, rgba(255, 107, 107, 0.03) 0%, transparent 70%);
         }}
-        .node {{
-            cursor: pointer;
-        }}
+        
         .node circle {{
-            stroke: #fff;
-            stroke-width: 2px;
+            stroke-width: 3px;
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
         }}
+        
         .node text {{
-            font-size: 10px;
-            fill: #fff;
-            text-anchor: middle;
+            font-size: 11px;
+            fill: #e8e8e8;
             pointer-events: none;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
         }}
+        
         .link {{
-            stroke: #666;
             stroke-opacity: 0.6;
         }}
+        
         .link-label {{
             font-size: 9px;
-            fill: #888;
+            fill: #8892b0;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
         }}
+        
         .tooltip {{
             position: absolute;
-            background: rgba(0,0,0,0.9);
-            border: 1px solid #00d9ff;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 12px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 0.9em;
             pointer-events: none;
             z-index: 1000;
-            max-width: 300px;
+            max-width: 350px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }}
+        
+        .tooltip h4 {{
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }}
+        
+        .tooltip-row {{
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }}
+        
         .tooltip-key {{
-            color: #00d9ff;
-            margin-right: 5px;
+            color: #8892b0;
         }}
+        
         .tooltip-value {{
-            color: #fff;
+            color: #e8e8e8;
+            text-align: right;
+            max-width: 200px;
+            word-break: break-word;
+        }}
+        
+        .detail-panel {{
+            position: fixed;
+            right: 20px;
+            top: 100px;
+            width: 350px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 107, 107, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            display: none;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }}
+        
+        .detail-panel.show {{
+            display: block;
+        }}
+        
+        .detail-panel h4 {{
+            color: #ff6b6b;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        
+        .detail-panel .close-btn {{
+            cursor: pointer;
+            color: #8892b0;
+            font-size: 1.5em;
+            line-height: 1;
+        }}
+        
+        .detail-panel .close-btn:hover {{
+            color: #e8e8e8;
+        }}
+        
+        .detail-content {{
+            max-height: 400px;
+            overflow-y: auto;
+        }}
+        
+        .detail-row {{
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }}
+        
+        .detail-row:last-child {{
+            border-bottom: none;
+        }}
+        
+        .risk-badge {{
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }}
+        
+        .risk-high {{
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }}
+        
+        .risk-medium {{
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+        }}
+        
+        ::-webkit-scrollbar {{
+            width: 6px;
+        }}
+        
+        ::-webkit-scrollbar-track {{
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }}
+        
+        ::-webkit-scrollbar-thumb {{
+            background: rgba(255, 107, 107, 0.3);
+            border-radius: 3px;
+        }}
+        
+        ::-webkit-scrollbar-thumb:hover {{
+            background: rgba(255, 107, 107, 0.5);
         }}
     </style>
 </head>
@@ -941,20 +1180,20 @@ def generate_perform_risk_subgraph_html(
         
         <div class="stats-bar">
             <div class="stat-item">
-                <div class="stat-value" id="node-count">{len(nodes)}</div>
-                <div class="stat-label">节点数量</div>
+                <div class="stat-value success">{contract_count}</div>
+                <div class="stat-label">合同</div>
             </div>
             <div class="stat-item">
-                <div class="stat-value" id="edge-count">{len(edges)}</div>
-                <div class="stat-label">关系数量</div>
+                <div class="stat-value purple">{company_count}</div>
+                <div class="stat-label">公司</div>
             </div>
             <div class="stat-item">
-                <div class="stat-value" id="txn-count">{len(overdue_transactions)}</div>
+                <div class="stat-value">{transaction_count}</div>
                 <div class="stat-label">逾期交易</div>
             </div>
             <div class="stat-item">
-                <div class="stat-value" id="company-count">{len(companies)}</div>
-                <div class="stat-label">相关公司</div>
+                <div class="stat-value info">{len(edges)}</div>
+                <div class="stat-label">关系数</div>
             </div>
         </div>
         
@@ -974,13 +1213,44 @@ def generate_perform_risk_subgraph_html(
                         <div class="legend-dot" style="background: #ff6b6b;"></div>
                         <span>逾期交易 (Transaction)</span>
                     </div>
+                    <div class="legend-item" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                        <span style="font-size: 0.85em; color: #8892b0;">边类型：</span>
+                    </div>
+                    <div class="legend-item">
+                        <div style="width: 30px; height: 2px; background: #ff6b6b;"></div>
+                        <span>逾期关联 (OVERDUE_FOR)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div style="width: 30px; height: 2px; background: #00d9ff;"></div>
+                        <span>合同关系 (PARTY/BELONGS_TO)</span>
+                    </div>
                 </div>
+                
+                <h3>节点列表</h3>
+                <div class="node-list" id="node-list"></div>
             </div>
             
             <div class="graph-panel">
+                <div class="graph-toolbar">
+                    <h3>履约风险图谱</h3>
+                    <div class="toolbar-buttons">
+                        <button class="btn" onclick="zoomIn()">🔍 放大</button>
+                        <button class="btn" onclick="zoomOut()">🔍 缩小</button>
+                        <button class="btn" onclick="resetView()">↺ 重置</button>
+                        <button class="btn btn-primary" onclick="exportData()">📥 导出数据</button>
+                    </div>
+                </div>
                 <svg id="graph-svg"></svg>
             </div>
         </div>
+    </div>
+    
+    <div class="detail-panel" id="detail-panel">
+        <h4>
+            <span id="detail-title">节点详情</span>
+            <span class="close-btn" onclick="closeDetailPanel()">×</span>
+        </h4>
+        <div class="detail-content" id="detail-content"></div>
     </div>
     
     <div class="tooltip" id="tooltip" style="display: none;"></div>
@@ -997,25 +1267,61 @@ def generate_perform_risk_subgraph_html(
             'Transaction': '#ff6b6b'
         }};
         
+        const sizeMap = {{
+            'Contract': 24,
+            'Company': 20,
+            'Transaction': 16
+        }};
+        
+        const edgeColorMap = {{
+            'OVERDUE_FOR': '#ff6b6b',
+            'BELONGS_TO': '#00d9ff',
+            'PARTY': '#00d9ff'
+        }};
+        
+        function renderNodeList() {{
+            const listEl = document.getElementById('node-list');
+            const grouped = {{}};
+            
+            graphData.nodes.forEach(node => {{
+                if (!grouped[node.type]) grouped[node.type] = [];
+                grouped[node.type].push(node);
+            }});
+            
+            let html = '';
+            for (const [type, nodes] of Object.entries(grouped)) {{
+                nodes.forEach(node => {{
+                    html += `
+                        <div class="node-item" data-id="${{node.id}}" onclick="focusNode('${{node.id}}')">
+                            <div class="node-item-type" style="color: ${{colorMap[type]}}">${{type}}</div>
+                            <div class="node-item-label">${{node.label}}</div>
+                        </div>
+                    `;
+                }});
+            }}
+            
+            listEl.innerHTML = html;
+        }}
+        
+        renderNodeList();
+        
         const svg = d3.select('#graph-svg');
-        const container = svg.node().parentElement;
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+        const width = svg.node().getBoundingClientRect().width;
+        const height = 700;
         
         svg.attr('viewBox', [0, 0, width, height]);
         
         const g = svg.append('g');
         
-        // Zoom behavior
         const zoom = d3.zoom()
             .scaleExtent([0.1, 4])
-            .on('zoom', (event) => g.attr('transform', event.transform));
+            .on('zoom', (event) => {{
+                g.attr('transform', event.transform);
+            }});
+        
         svg.call(zoom);
         
-        // Build node map
-        const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
-        
-        // Create links
+        const nodes = graphData.nodes.map(n => ({{...n}}));
         const links = graphData.edges.map(e => ({{
             source: e.source,
             target: e.target,
@@ -1023,25 +1329,47 @@ def generate_perform_risk_subgraph_html(
             properties: e.properties
         }}));
         
-        // Force simulation
-        const simulation = d3.forceSimulation(graphData.nodes)
-            .force('link', d3.forceLink(links).id(d => d.id).distance(100))
-            .force('charge', d3.forceManyBody().strength(-300))
+        const simulation = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+            .force('charge', d3.forceManyBody().strength(-400))
             .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collision', d3.forceCollide().radius(40));
+            .force('collision', d3.forceCollide().radius(d => sizeMap[d.type] + 15));
         
-        // Draw links
+        // Arrow markers
+        const defs = svg.append('defs');
+        Object.keys(edgeColorMap).forEach(type => {{
+            defs.append('marker')
+                .attr('id', `arrow-${{type}}`)
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 28)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('fill', edgeColorMap[type] || '#666')
+                .attr('d', 'M0,-5L10,0L0,5');
+        }});
+        
         const link = g.append('g')
             .selectAll('line')
             .data(links)
             .join('line')
             .attr('class', 'link')
-            .attr('stroke-width', 1.5);
+            .attr('stroke', d => edgeColorMap[d.type] || '#666')
+            .attr('stroke-width', 2)
+            .attr('marker-end', d => `url(#arrow-${{d.type}})`);
         
-        // Draw nodes
+        const linkLabel = g.append('g')
+            .selectAll('text')
+            .data(links)
+            .join('text')
+            .attr('class', 'link-label')
+            .text(d => d.type);
+        
         const node = g.append('g')
             .selectAll('g')
-            .data(graphData.nodes)
+            .data(nodes)
             .join('g')
             .attr('class', 'node')
             .call(d3.drag()
@@ -1050,32 +1378,61 @@ def generate_perform_risk_subgraph_html(
                 .on('end', dragended));
         
         node.append('circle')
-            .attr('r', d => d.type === 'Transaction' ? 15 : 20)
-            .attr('fill', d => colorMap[d.type] || '#888');
+            .attr('r', d => sizeMap[d.type] || 18)
+            .attr('fill', d => colorMap[d.type] || '#888')
+            .attr('stroke', 'rgba(255,255,255,0.3)')
+            .attr('stroke-width', 2);
         
         node.append('text')
-            .attr('dy', 4)
-            .text(d => d.label || d.id.substring(0, 8));
+            .attr('dy', d => sizeMap[d.type] + 15)
+            .attr('text-anchor', 'middle')
+            .text(d => d.label.length > 12 ? d.label.substring(0, 12) + '...' : d.label);
         
-        // Tooltip
         const tooltip = d3.select('#tooltip');
         
         node.on('mouseover', (event, d) => {{
-            let html = `<div><span class="tooltip-key">ID:</span><span class="tooltip-value">${{d.id}}</span></div>`;
-            html += `<div><span class="tooltip-key">类型:</span><span class="tooltip-value">${{d.type}}</span></div>`;
+            let html = `<h4>${{d.label}}</h4>`;
+            html += `<div class="tooltip-row"><span class="tooltip-key">类型</span><span class="tooltip-value">${{d.type}}</span></div>`;
+            html += `<div class="tooltip-row"><span class="tooltip-key">ID</span><span class="tooltip-value">${{d.id}}</span></div>`;
+            
             if (d.properties) {{
                 for (const [key, value] of Object.entries(d.properties)) {{
                     if (value !== null && value !== undefined && value !== '') {{
-                        html += `<div><span class="tooltip-key">${{key}}:</span><span class="tooltip-value">${{value}}</span></div>`;
+                        html += `<div class="tooltip-row"><span class="tooltip-key">${{key}}</span><span class="tooltip-value">${{value}}</span></div>`;
                     }}
                 }}
             }}
+            
             tooltip.html(html)
                 .style('display', 'block')
-                .style('left', (event.pageX + 10) + 'px')
+                .style('left', (event.pageX + 15) + 'px')
                 .style('top', (event.pageY - 10) + 'px');
         }})
-        .on('mouseout', () => tooltip.style('display', 'none'));
+        .on('mouseout', () => {{
+            tooltip.style('display', 'none');
+        }})
+        .on('click', (event, d) => {{
+            showDetailPanel(d);
+        }});
+        
+        link.on('mouseover', (event, d) => {{
+            let html = `<h4>${{d.type}}</h4>`;
+            if (d.properties) {{
+                for (const [key, value] of Object.entries(d.properties)) {{
+                    if (value) {{
+                        html += `<div class="tooltip-row"><span class="tooltip-key">${{key}}</span><span class="tooltip-value">${{value}}</span></div>`;
+                    }}
+                }}
+            }}
+            
+            tooltip.html(html)
+                .style('display', 'block')
+                .style('left', (event.pageX + 15) + 'px')
+                .style('top', (event.pageY - 10) + 'px');
+        }})
+        .on('mouseout', () => {{
+            tooltip.style('display', 'none');
+        }});
         
         simulation.on('tick', () => {{
             link
@@ -1084,24 +1441,104 @@ def generate_perform_risk_subgraph_html(
                 .attr('x2', d => d.target.x)
                 .attr('y2', d => d.target.y);
             
+            linkLabel
+                .attr('x', d => (d.source.x + d.target.x) / 2)
+                .attr('y', d => (d.source.y + d.target.y) / 2);
+            
             node.attr('transform', d => `translate(${{d.x}},${{d.y}})`);
         }});
         
-        function dragstarted(event) {{
+        function dragstarted(event, d) {{
             if (!event.active) simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
+            d.fx = d.x;
+            d.fy = d.y;
         }}
         
-        function dragged(event) {{
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
+        function dragged(event, d) {{
+            d.fx = event.x;
+            d.fy = event.y;
         }}
         
-        function dragended(event) {{
+        function dragended(event, d) {{
             if (!event.active) simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
+            d.fx = null;
+            d.fy = null;
+        }}
+        
+        function zoomIn() {{
+            svg.transition().call(zoom.scaleBy, 1.3);
+        }}
+        
+        function zoomOut() {{
+            svg.transition().call(zoom.scaleBy, 0.7);
+        }}
+        
+        function resetView() {{
+            svg.transition().call(zoom.transform, d3.zoomIdentity);
+        }}
+        
+        function focusNode(nodeId) {{
+            const targetNode = nodes.find(n => n.id === nodeId);
+            if (targetNode) {{
+                const transform = d3.zoomIdentity
+                    .translate(width / 2 - targetNode.x, height / 2 - targetNode.y);
+                svg.transition().duration(500).call(zoom.transform, transform);
+                
+                document.querySelectorAll('.node-item').forEach(el => el.classList.remove('active'));
+                document.querySelector(`.node-item[data-id="${{nodeId}}"]`)?.classList.add('active');
+                
+                showDetailPanel(targetNode);
+            }}
+        }}
+        
+        function showDetailPanel(node) {{
+            const panel = document.getElementById('detail-panel');
+            const title = document.getElementById('detail-title');
+            const content = document.getElementById('detail-content');
+            
+            title.textContent = node.label;
+            
+            let html = `
+                <div class="detail-row">
+                    <span class="tooltip-key">类型</span>
+                    <span class="tooltip-value">${{node.type}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="tooltip-key">ID</span>
+                    <span class="tooltip-value">${{node.id}}</span>
+                </div>
+            `;
+            
+            if (node.properties) {{
+                for (const [key, value] of Object.entries(node.properties)) {{
+                    if (value !== null && value !== undefined && value !== '') {{
+                        html += `
+                            <div class="detail-row">
+                                <span class="tooltip-key">${{key}}</span>
+                                <span class="tooltip-value">${{value}}</span>
+                            </div>
+                        `;
+                    }}
+                }}
+            }}
+            
+            content.innerHTML = html;
+            panel.classList.add('show');
+        }}
+        
+        function closeDetailPanel() {{
+            document.getElementById('detail-panel').classList.remove('show');
+        }}
+        
+        function exportData() {{
+            const data = JSON.stringify(graphData, null, 2);
+            const blob = new Blob([data], {{ type: 'application/json' }});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'perform_risk_subgraph.json';
+            a.click();
+            URL.revokeObjectURL(url);
         }}
     </script>
 </body>

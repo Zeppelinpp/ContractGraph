@@ -29,6 +29,13 @@ from src.analysis.perform_risk import (
     analyze_perform_risk,
     get_perform_risk_subgraph,
 )
+from src.analysis.external_risk_rank import (
+    load_weighted_graph as load_external_risk_graph,
+    initialize_external_risk_seeds,
+    compute_external_risk_rank,
+    analyze_external_risk_results,
+    get_external_risk_subgraph,
+)
 from src.server.models import (
     FraudRankRequest,
     FraudRankParams,
@@ -49,11 +56,18 @@ from src.server.models import (
     PerformRiskCompanyItem,
     PerformRiskSubGraphRequest,
     PerformRiskSubGraphResponse,
+    ExternalRiskRankRequest,
+    ExternalRiskRankParams,
+    ExternalRiskCompanyItem,
+    ExternalRiskRankSubGraphRequest,
+    ExternalRiskRankSubGraphResponse,
 )
-from src.config.models import FraudRankConfig, PerformRiskConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig
+from src.utils.embedding import load_edge_weights
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
 
 app = FastAPI(
     title="央企穿透式监督知识图谱API",
@@ -599,6 +613,207 @@ async def view_perform_risk_html(filename: str):
 
 
 # ============================================================================
+# 外部风险事件传导分析 API
+# ============================================================================
+
+
+@app.post("/api/external-risk-rank", response_model=BaseResponse)
+async def external_risk_rank_analysis(request: ExternalRiskRankRequest):
+    """
+    外部风险事件传导分析
+
+    基于 PageRank 算法，计算企业因行政处罚、经营异常等外部风险事件的风险传导分数。
+    返回公司风险排名和关联合同ID列表（按风险分数倒序）。
+    """
+    session = None
+    start_time = time.time()
+    try:
+        session = get_nebula_session()
+
+        params = request.params or ExternalRiskRankParams()
+        config = ExternalRiskRankConfig(
+            edge_weights=params.edge_weights,
+            admin_penalty_weights=params.admin_penalty_weights,
+            admin_penalty_status_weights=params.admin_penalty_status_weights,
+            admin_penalty_amount_max=params.admin_penalty_amount_max,
+            business_abnormal_weights=params.business_abnormal_weights,
+            business_abnormal_status_weights=params.business_abnormal_status_weights,
+            damping=params.damping,
+            risk_level_thresholds=params.risk_level_thresholds,
+        )
+
+        # Load embedding weights
+        embedding_weights = None
+        if params.use_cached_embedding:
+            cache_file = os.path.join(CACHE_DIR, "edge_weights.json")
+            embedding_weights = load_edge_weights(cache_file)
+
+        # Load graph data
+        graph = load_external_risk_graph(
+            session,
+            embedding_weights=embedding_weights,
+            company_ids=request.orgs,
+            periods=request.period,
+            config=config,
+        )
+
+        # Initialize risk seeds
+        init_scores, risk_details = initialize_external_risk_seeds(
+            session,
+            risk_type=params.risk_type,
+            company_ids=request.orgs,
+            periods=request.period,
+            config=config,
+        )
+
+        # Compute External Risk Rank
+        risk_scores = compute_external_risk_rank(
+            graph, init_scores, damping=config.damping
+        )
+
+        # Generate report
+        result = analyze_external_risk_results(
+            risk_scores, risk_details, session,
+            top_n=params.top_n,
+            risk_type=params.risk_type,
+            company_ids=request.orgs,
+            config=config,
+        )
+
+        company_df = result.get("company_report")
+        contract_ids = result.get("contract_ids", [])
+
+        # Build company report
+        company_report = []
+        if company_df is not None and len(company_df) > 0:
+            for _, row in company_df.iterrows():
+                company_report.append(
+                    ExternalRiskCompanyItem(
+                        company_id=str(row.get("公司ID", "")),
+                        company_name=str(row.get("公司名称", "")),
+                        risk_score=float(row.get("风险分数", 0)),
+                        risk_level=str(row.get("风险等级", "")),
+                        risk_source=str(row.get("风险来源", "")),
+                        risk_events=str(row.get("关联事件", "")),
+                        legal_person=str(row.get("法人代表", "")),
+                        credit_code=str(row.get("信用代码", "")),
+                    )
+                )
+
+        seed_count = sum(1 for s in init_scores.values() if s > 0)
+
+        return BaseResponse(
+            type="external_risk_rank",
+            count=len(contract_ids),
+            contract_ids=contract_ids,
+            details={
+                "company_list": [c.model_dump() for c in company_report],
+                "metadata": {
+                    "node_count": len(graph["nodes"]),
+                    "edge_count": sum(len(v) for v in graph["edges"].values()),
+                    "seed_count": seed_count,
+                    "company_count": len(company_report),
+                    "contract_count": len(contract_ids),
+                    "risk_type": params.risk_type,
+                    "timestamp": datetime.now().isoformat(),
+                    "execution_time": round(time.time() - start_time, 2),
+                },
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.post("/api/external-risk-rank/subgraph", response_model=ExternalRiskRankSubGraphResponse)
+async def get_external_risk_subgraph_api(request: ExternalRiskRankSubGraphRequest):
+    """
+    获取外部风险子图
+
+    以合同ID为入口，查找合同的相关方中存在经营异常/行政处罚的公司，
+    获取这些公司的风险事件以及涉及的其他合同，递归展开生成交互式HTML页面。
+    返回的 html_url 可直接嵌入前端 iframe 中。
+    """
+    session = None
+    try:
+        session = get_nebula_session()
+
+        result = get_external_risk_subgraph(
+            session=session,
+            contract_id=request.contract_id,
+            max_depth=request.max_depth,
+            risk_type=request.risk_type,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", "未找到相关数据")
+            )
+
+        html_url = None
+        if result.get("html_url"):
+            html_filename = os.path.basename(result["html_url"])
+            html_url = f"/api/external-risk-rank/view/{html_filename}"
+
+        return ExternalRiskRankSubGraphResponse(
+            success=True,
+            contract_id=request.contract_id,
+            html_url=html_url,
+            max_depth=result.get("max_depth", request.max_depth),
+            node_count=result.get("node_count", 0),
+            edge_count=result.get("edge_count", 0),
+            company_count=result.get("company_count", 0),
+            risk_event_count=result.get("risk_event_count", 0),
+            contract_ids=result.get("contract_ids", []),
+            nodes=[SubGraphNode(**n) for n in result.get("nodes", [])],
+            edges=[SubGraphEdge(**e) for e in result.get("edges", [])],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.get("/api/external-risk-rank/subgraph/{contract_id}")
+async def get_external_risk_subgraph_by_id(
+    contract_id: str,
+    max_depth: int = Query(default=2, ge=1, le=4, description="递归深度"),
+    risk_type: str = Query(default="all", description="风险类型: admin_penalty, business_abnormal, all"),
+):
+    """
+    GET 方式获取外部风险子图（便于前端直接调用）
+    """
+    request = ExternalRiskRankSubGraphRequest(
+        contract_id=contract_id,
+        max_depth=max_depth,
+        risk_type=risk_type,
+    )
+    return await get_external_risk_subgraph_api(request)
+
+
+@app.get("/api/external-risk-rank/view/{filename}")
+async def view_external_risk_html(filename: str):
+    """
+    提供外部风险子图 HTML 文件访问
+
+    前端可通过 iframe 嵌入此 URL 展示交互式图谱
+    """
+    file_path = os.path.join(REPORTS_DIR, filename)
+
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
+# ============================================================================
 # 健康检查
 # ============================================================================
 
@@ -627,6 +842,10 @@ async def root():
             "perform_risk_subgraph": "POST /api/perform-risk/subgraph",
             "perform_risk_subgraph_get": "GET /api/perform-risk/subgraph/{contract_id}",
             "perform_risk_view": "GET /api/perform-risk/view/{filename}",
+            "external_risk_rank": "POST /api/external-risk-rank",
+            "external_risk_rank_subgraph": "POST /api/external-risk-rank/subgraph",
+            "external_risk_rank_subgraph_get": "GET /api/external-risk-rank/subgraph/{contract_id}",
+            "external_risk_rank_view": "GET /api/external-risk-rank/view/{filename}",
         },
     }
 

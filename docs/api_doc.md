@@ -1,6 +1,6 @@
 ## 场景概述
 - 履约关联风险分析
-- 履约能力风险分析
+- 履约能力风险分析（外部风险事件传导分析）
 - 法务风险分析
 - 义务履约风险分析
 - 循环交易检测
@@ -163,7 +163,6 @@
 
 **查看HTML页面：**
 ```bash
-# 在浏览器中打开
 open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contract_CON_001.html"
 ```
 
@@ -262,6 +261,184 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 - `node_count`: 子图节点数量
 - `edge_count`: 子图边数量
 - `contract_ids`: 涉及的合同ID列表
+
+### 履约能力风险分析（外部风险事件传导分析）
+
+场景类型：`external_risk_rank`
+
+基于 PageRank 算法，计算企业因行政处罚、经营异常等外部风险事件的风险传导分数。
+风险传导路径：AdminPenalty/BusinessAbnormal -> Company -> [CONTROLS/TRADES_WITH/...] -> Company
+
+返回结构示例：
+```json
+{
+    "type": "external_risk_rank",
+    "count": 25,
+    "contract_ids": ["CON_001", "CON_002", "CON_003", ...],
+    "details": {
+        "company_list": [
+            {
+                "company_id": "Company_ORG001",
+                "company_name": "中建华东分公司",
+                "risk_score": 0.72,
+                "risk_level": "高风险",
+                "risk_source": "直接关联",
+                "risk_events": "AdminPenalty(AP_2024_001...); BusinessAbnormal(BA_2024_003...)",
+                "legal_person": "张三",
+                "credit_code": "91310000XXX"
+            },
+            {
+                "company_id": "Company_ORG002",
+                "company_name": "华信建材有限公司",
+                "risk_score": 0.45,
+                "risk_level": "中风险",
+                "risk_source": "传导",
+                "risk_events": "传导风险",
+                "legal_person": "李四",
+                "credit_code": "91310000YYY"
+            }
+        ],
+        "metadata": {
+            "node_count": 150,
+            "edge_count": 320,
+            "seed_count": 15,
+            "company_count": 20,
+            "contract_count": 25,
+            "risk_type": "all",
+            "timestamp": "2024-01-20T10:30:00.000000",
+            "execution_time": 2.35
+        }
+    }
+}
+```
+
+字段说明：
+- `company_list`: 公司风险列表，按风险分数倒序排列
+  - `company_id`: 公司ID（Nebula Graph 节点ID）
+  - `company_name`: 公司名称
+  - `risk_score`: 风险分数（0-1，越高风险越大）
+  - `risk_level`: 风险等级（高风险/中风险/低风险/正常）
+  - `risk_source`: 风险来源（直接关联 = 公司直接关联行政处罚/经营异常；传导 = 通过关联关系传导）
+  - `risk_events`: 关联的风险事件描述
+  - `legal_person`: 法人代表
+  - `credit_code`: 信用代码
+- `metadata`: 分析元数据
+  - `node_count`: 图谱节点数量
+  - `edge_count`: 图谱边数量
+  - `seed_count`: 风险种子节点数量（直接关联风险事件的公司）
+  - `company_count`: 涉及公司数量
+  - `contract_count`: 风险合同数量
+  - `risk_type`: 风险类型
+  - `timestamp`: 分析时间戳
+  - `execution_time`: 执行耗时（秒）
+
+#### 外部风险子图可视化
+
+接口：`POST /api/external-risk-rank/subgraph`
+
+以合同ID为入口，查找合同的相关方中存在经营异常/行政处罚的公司，获取这些公司的风险事件以及涉及的其他合同，递归展开生成交互式HTML可视化页面。
+
+**POST 请求参数：**
+```json
+{
+    "contract_id": "Contract_CON_001",
+    "max_depth": 2,
+    "risk_type": "all"
+}
+```
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `contract_id` | string | 必填 | 合同ID（Nebula Graph 节点ID） |
+| `max_depth` | int | `2` | 递归深度，范围 1-4 |
+| `risk_type` | string | `"all"` | 风险类型：`admin_penalty`、`business_abnormal`、`all` |
+
+**返回结构示例：**
+```json
+{
+    "success": true,
+    "contract_id": "Contract_CON_001",
+    "html_url": "/api/external-risk-rank/view/external_risk_subgraph_Contract_CON_001.html",
+    "max_depth": 2,
+    "node_count": 18,
+    "edge_count": 25,
+    "company_count": 5,
+    "risk_event_count": 8,
+    "contract_ids": ["CON_001", "CON_002", "CON_005"],
+    "nodes": [
+        {
+            "id": "Contract_CON_001",
+            "type": "Contract",
+            "label": "采购合同-华信建材",
+            "properties": {"contract_no": "HT-2024-001", "amount": 1000000, "depth": 0}
+        },
+        {
+            "id": "Company_ORG001",
+            "type": "Company",
+            "label": "中建华东分公司",
+            "properties": {"name": "中建华东分公司", "credit_code": "91310000XXX"}
+        },
+        {
+            "id": "AdminPenalty_AP001",
+            "type": "AdminPenalty",
+            "label": "行政处罚-AP_2024_001",
+            "properties": {"event_no": "AP_2024_001", "amount": 50000, "risk_score": 0.65}
+        },
+        {
+            "id": "BusinessAbnormal_BA001",
+            "type": "BusinessAbnormal",
+            "label": "经营异常-BA_2024_003",
+            "properties": {"event_no": "BA_2024_003", "risk_score": 0.72}
+        }
+    ],
+    "edges": [
+        {
+            "source": "Company_ORG001",
+            "target": "Contract_CON_001",
+            "type": "PARTY_A",
+            "properties": {}
+        },
+        {
+            "source": "AdminPenalty_AP001",
+            "target": "Company_ORG001",
+            "type": "ADMIN_PENALTY_OF",
+            "properties": {}
+        },
+        {
+            "source": "BusinessAbnormal_BA001",
+            "target": "Company_ORG001",
+            "type": "BUSINESS_ABNORMAL_OF",
+            "properties": {}
+        }
+    ]
+}
+```
+
+**字段说明：**
+- `success`: 是否成功
+- `contract_id`: 入口合同ID
+- `html_url`: 可视化HTML页面URL（可嵌入iframe）
+- `max_depth`: 递归深度
+- `node_count`: 子图节点数量
+- `edge_count`: 子图边数量
+- `company_count`: 相关公司数量
+- `risk_event_count`: 风险事件数量（行政处罚 + 经营异常）
+- `contract_ids`: 关联的风险合同ID列表
+- `nodes`: 节点列表
+  - `id`: 节点ID
+  - `type`: 节点类型（Contract/Company/AdminPenalty/BusinessAbnormal）
+  - `label`: 节点标签
+  - `properties`: 节点属性
+- `edges`: 边列表
+  - `source`: 源节点ID
+  - `target`: 目标节点ID
+  - `type`: 边类型（PARTY_A/PARTY_B/ADMIN_PENALTY_OF/BUSINESS_ABNORMAL_OF）
+  - `properties`: 边属性
+
+**查看HTML页面：**
+```bash
+open "http://localhost:8000/api/external-risk-rank/view/external_risk_subgraph_Contract_CON_001.html"
+```
 
 ### 履约关联风险分析
 
@@ -407,7 +584,6 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 
 **查看HTML页面：**
 ```bash
-# 在浏览器中打开
 open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html"
 ```
 
@@ -534,6 +710,63 @@ open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract
         "current_date": "2024-06-30",
         "overdue_days_max": 60,
         "amount_threshold": 5000000.0
+    }
+}
+```
+
+### 履约能力风险分析（外部风险事件传导分析）- 参数配置
+
+场景类型：`external_risk_rank`
+
+基于 PageRank 算法，计算企业因行政处罚、经营异常等外部风险事件的风险传导分数。
+
+**params 参数说明：**
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `type` | string | `"external_risk_rank"` | 场景类型标识 |
+| `top_n` | int | `50` | 返回 top N 结果 |
+| `risk_type` | string | `"all"` | 风险类型：`admin_penalty`(行政处罚)、`business_abnormal`(经营异常)、`all`(全部) |
+| `use_cached_embedding` | bool | `true` | 是否使用缓存的 embedding 权重 |
+| `damping` | number | `0.65` | PageRank 阻尼系数，范围 0-1 |
+| `edge_weights` | object | 见下方 | 边权重配置 |
+| `admin_penalty_weights` | object | `{"amount": 0.4, "status": 0.3, "severity": 0.3}` | 行政处罚风险评分各因子权重 |
+| `admin_penalty_status_weights` | object | `{"C": 0.7, "P": 0.9}` | 行政处罚状态权重 |
+| `admin_penalty_amount_max` | number | `1000000.0` | 行政处罚金额归一化上限（元） |
+| `business_abnormal_weights` | object | `{"status": 0.6, "reason": 0.4}` | 经营异常风险评分各因子权重 |
+| `business_abnormal_status_weights` | object | `{"C": 0.3}` | 经营异常状态权重，非C状态默认0.9 |
+| `risk_level_thresholds` | object | `{"high": 0.6, "medium": 0.3, "low": 0.1}` | 风险等级划分阈值 |
+
+**edge_weights 默认值：**
+```json
+{
+    "CONTROLS": 0.85, "LEGAL_PERSON": 0.75, "TRADES_WITH": 0.50,
+    "IS_SUPPLIER": 0.45, "IS_CUSTOMER": 0.40,
+    "ADMIN_PENALTY_OF": 0.90, "BUSINESS_ABNORMAL_OF": 0.70,
+    "PARTY_A": 0.50, "PARTY_B": 0.50
+}
+```
+
+**请求示例（使用默认参数）：**
+```json
+{
+    "orgs": ["org_001", "org_002"],
+    "period": ["2024-01-01", "2024-12-31"],
+    "params": { "type": "external_risk_rank" }
+}
+```
+
+**请求示例（自定义参数）：**
+```json
+{
+    "orgs": ["org_001"],
+    "period": ["2024-01-01", "2024-06-30"],
+    "params": {
+        "type": "external_risk_rank",
+        "top_n": 100,
+        "risk_type": "admin_penalty",
+        "damping": 0.85,
+        "edge_weights": { "CONTROLS": 0.9, "ADMIN_PENALTY_OF": 0.95 },
+        "admin_penalty_amount_max": 500000.0
     }
 }
 ```

@@ -1,7 +1,7 @@
 from typing import List, Union, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from src.config.models import FraudRankConfig, PerformRiskConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig, ExternalRiskRankConfig
 
 
 # ============================================================================
@@ -244,5 +244,72 @@ class PerformRiskSubGraphResponse(BaseModel):
     related_contract_count: int
     company_count: int
     contract_ids: List[str] = Field(default=[], description="关联的逾期合同ID列表")
+    nodes: List[SubGraphNode] = Field(default=[], description="子图节点")
+    edges: List[SubGraphEdge] = Field(default=[], description="子图边")
+
+
+# ============================================================================
+# 外部风险事件传导分析相关模型
+# ============================================================================
+
+
+class ExternalRiskRankParams(ExternalRiskRankConfig):
+    """外部风险事件传导分析算法参数（继承自 ExternalRiskRankConfig，新增API专用字段）"""
+
+    type: str = Field(default="external_risk_rank", description="场景类型")
+    top_n: int = Field(default=50, description="返回 top N 结果")
+    risk_type: str = Field(
+        default="all",
+        description="风险类型: admin_penalty(行政处罚), business_abnormal(经营异常), all(全部)"
+    )
+    use_cached_embedding: bool = Field(
+        default=True, description="是否使用缓存的 embedding 权重"
+    )
+
+
+class ExternalRiskRankRequest(BaseRequest):
+    """外部风险事件传导分析请求"""
+
+    params: Optional[ExternalRiskRankParams] = Field(
+        default=None, description="外部风险事件传导分析算法参数"
+    )
+
+
+class ExternalRiskCompanyItem(BaseModel):
+    """外部风险公司项"""
+
+    company_id: str
+    company_name: str
+    risk_score: float
+    risk_level: str
+    risk_source: str = Field(description="风险来源: 直接关联 or 传导")
+    risk_events: str = Field(description="关联的风险事件")
+    legal_person: str
+    credit_code: str
+
+
+class ExternalRiskRankSubGraphRequest(BaseModel):
+    """外部风险子图请求"""
+
+    contract_id: str = Field(..., description="合同ID（Nebula Graph 节点ID）")
+    max_depth: int = Field(default=2, ge=1, le=4, description="递归深度，1-4")
+    risk_type: str = Field(
+        default="all",
+        description="风险类型: admin_penalty(行政处罚), business_abnormal(经营异常), all(全部)"
+    )
+
+
+class ExternalRiskRankSubGraphResponse(BaseModel):
+    """外部风险子图响应"""
+
+    success: bool
+    contract_id: str
+    html_url: Optional[str]
+    max_depth: int
+    node_count: int
+    edge_count: int
+    company_count: int
+    risk_event_count: int
+    contract_ids: List[str] = Field(default=[], description="关联的风险合同ID列表")
     nodes: List[SubGraphNode] = Field(default=[], description="子图节点")
     edges: List[SubGraphEdge] = Field(default=[], description="子图边")

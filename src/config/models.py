@@ -4,14 +4,45 @@
 用于定义各个分析场景的参数配置模型
 """
 
-from typing import Dict, Optional
-from pydantic import BaseModel, Field
+from typing import Dict
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class FraudRankConfig(BaseModel):
     """
     FraudRank 欺诈风险传导分析的参数配置模型
     """
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "edge_weights": {
+                    "CONTROLS": 0.8,
+                    "LEGAL_PERSON": 0.75,
+                    "PAYS": 0.65,
+                    "RECEIVES": 0.60,
+                    "TRADES_WITH": 0.50,
+                    "IS_SUPPLIER": 0.45,
+                    "IS_CUSTOMER": 0.40,
+                    "PARTY_A": 0.50,
+                    "PARTY_B": 0.50,
+                },
+                "event_type_weights": {
+                    "Case": 0.8,
+                    "Dispute": 0.5,
+                },
+                "event_type_default_weight": 0.3,
+                "status_weights": {
+                    "F": 0.9,
+                    "I": 0.8,
+                    "J": 0.7,
+                    "N": 0.4,
+                },
+                "status_default_weight": 0.5,
+                "amount_threshold": 10000000.0,
+            }
+        }
+    )
     
     # 边权重配置
     edge_weights: Dict[str, float] = Field(
@@ -76,42 +107,27 @@ class FraudRankConfig(BaseModel):
         },
         description="初始风险分数计算时各因子的加权平均系数，总和应为1.0"
     )
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "edge_weights": {
-                    "CONTROLS": 0.8,
-                    "LEGAL_PERSON": 0.75,
-                    "PAYS": 0.65,
-                    "RECEIVES": 0.60,
-                    "TRADES_WITH": 0.50,
-                    "IS_SUPPLIER": 0.45,
-                    "IS_CUSTOMER": 0.40,
-                    "PARTY_A": 0.50,
-                    "PARTY_B": 0.50,
-                },
-                "event_type_weights": {
-                    "Case": 0.8,
-                    "Dispute": 0.5,
-                },
-                "event_type_default_weight": 0.3,
-                "status_weights": {
-                    "F": 0.9,
-                    "I": 0.8,
-                    "J": 0.7,
-                    "N": 0.4,
-                },
-                "status_default_weight": 0.5,
-                "amount_threshold": 10000000.0,
-            }
-        }
 
 
 class PerformRiskConfig(BaseModel):
     """
     履约关联风险检测的参数配置模型
     """
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "overdue_days_max": 365,
+                "severity_power": 0.7,
+                "overdue_base_weight": 0.15,
+                "severity_multiplier_max": 0.5,
+                "overdue_score_cap": 0.5,
+                "risk_contract_weight": 0.3,
+                "amount_threshold": 10000000.0,
+                "amount_weight": 0.2,
+            }
+        }
+    )
     
     # 逾期天数阈值（用于风险评分）
     overdue_days_max: int = Field(
@@ -160,18 +176,112 @@ class PerformRiskConfig(BaseModel):
         default=0.2,
         description="金额部分对总分的权重"
     )
+
+
+class ExternalRiskRankConfig(BaseModel):
+    """
+    外部风险事件传导分析的参数配置模型
+    """
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
-                "overdue_days_max": 365,
-                "severity_power": 0.7,
-                "overdue_base_weight": 0.15,
-                "severity_multiplier_max": 0.5,
-                "overdue_score_cap": 0.5,
-                "risk_contract_weight": 0.3,
-                "amount_threshold": 10000000.0,
-                "amount_weight": 0.2,
+                "edge_weights": {
+                    "CONTROLS": 0.85,
+                    "LEGAL_PERSON": 0.75,
+                    "TRADES_WITH": 0.50,
+                    "IS_SUPPLIER": 0.45,
+                    "IS_CUSTOMER": 0.40,
+                    "ADMIN_PENALTY_OF": 0.90,
+                    "BUSINESS_ABNORMAL_OF": 0.70,
+                },
+                "admin_penalty_weights": {
+                    "amount": 0.4,
+                    "status": 0.3,
+                    "severity": 0.3,
+                },
+                "damping": 0.85,
+                "risk_level_thresholds": {
+                    "high": 0.6,
+                    "medium": 0.3,
+                    "low": 0.1,
+                },
             }
         }
-
+    )
+    
+    # 边权重配置
+    edge_weights: Dict[str, float] = Field(
+        default={
+            "CONTROLS": 0.85,
+            "LEGAL_PERSON": 0.75,
+            "TRADES_WITH": 0.50,
+            "IS_SUPPLIER": 0.45,
+            "IS_CUSTOMER": 0.40,
+            "ADMIN_PENALTY_OF": 0.90,
+            "BUSINESS_ABNORMAL_OF": 0.70,
+            "PARTY_A": 0.50,
+            "PARTY_B": 0.50,
+        },
+        description="边权重配置，定义不同类型边的风险传导权重"
+    )
+    
+    # 行政处罚风险评分权重
+    admin_penalty_weights: Dict[str, float] = Field(
+        default={
+            "amount": 0.4,
+            "status": 0.3,
+            "severity": 0.3,
+        },
+        description="行政处罚风险评分各因子权重"
+    )
+    
+    # 行政处罚状态权重
+    admin_penalty_status_weights: Dict[str, float] = Field(
+        default={
+            "C": 0.7,  # Completed
+            "P": 0.9,  # Pending/Processing
+        },
+        description="行政处罚状态权重"
+    )
+    
+    # 行政处罚金额归一化上限
+    admin_penalty_amount_max: float = Field(
+        default=1000000.0,
+        description="行政处罚金额归一化上限（默认100万）"
+    )
+    
+    # 经营异常风险评分权重
+    business_abnormal_weights: Dict[str, float] = Field(
+        default={
+            "status": 0.6,
+            "reason": 0.4,
+        },
+        description="经营异常风险评分各因子权重"
+    )
+    
+    # 经营异常状态权重
+    business_abnormal_status_weights: Dict[str, float] = Field(
+        default={
+            "C": 0.3,  # Removed from abnormal list
+        },
+        description="经营异常状态权重，非C状态默认0.9"
+    )
+    
+    # PageRank 阻尼系数
+    damping: float = Field(
+        default=0.65,
+        ge=0.0,
+        le=1.0,
+        description="PageRank 阻尼系数"
+    )
+    
+    # 风险等级阈值
+    risk_level_thresholds: Dict[str, float] = Field(
+        default={
+            "high": 0.6,
+            "medium": 0.3,
+            "low": 0.1,
+        },
+        description="风险等级划分阈值"
+    )

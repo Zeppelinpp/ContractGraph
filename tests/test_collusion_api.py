@@ -180,10 +180,13 @@ class TestCollusionAPI:
 
 
 class TestCollusionSubGraphAPI:
-    """Collusion SubGraph API 测试类"""
+    """Collusion SubGraph API 测试类
+    
+    注意：子图接口现在直接返回 HTML 文件，而不是 JSON 响应
+    """
 
     def test_subgraph_post_endpoint(self):
-        """测试 POST 方式获取子图"""
+        """测试 POST 方式获取子图 - 返回 HTML 文件"""
         request_data = {
             "contract_id": "CON_001",
             "min_cluster_size": 3,
@@ -196,24 +199,22 @@ class TestCollusionSubGraphAPI:
         assert response.status_code in [200, 404, 500]
         
         if response.status_code == 200:
-            data = response.json()
-            assert data["success"] is True
-            assert "contract_id" in data
-            assert "html_url" in data
-            assert "network_id" in data
-            assert "node_count" in data
-            assert "edge_count" in data
-            assert "company_count" in data
-            assert "contract_ids" in data
+            # 验证返回的是 HTML 内容
+            assert "text/html" in response.headers.get("content-type", "")
+            # 验证 HTML 内容不为空
+            assert len(response.content) > 0
 
     def test_subgraph_get_endpoint(self):
-        """测试 GET 方式获取子图"""
+        """测试 GET 方式获取子图 - 返回 HTML 文件"""
         response = client.get(
             "/api/collusion/subgraph/CON_001",
             params={"min_cluster_size": 3, "risk_score_threshold": 0.5}
         )
 
         assert response.status_code in [200, 404, 500]
+        
+        if response.status_code == 200:
+            assert "text/html" in response.headers.get("content-type", "")
 
     def test_subgraph_different_cluster_sizes(self):
         """测试不同最小集群大小"""
@@ -317,34 +318,16 @@ class TestCollusionWorkflow:
             )
             
             if subgraph_response.status_code == 200:
-                subgraph_data = subgraph_response.json()
+                # 子图接口现在直接返回 HTML 文件
+                content_type = subgraph_response.headers.get("content-type", "")
+                html_content = subgraph_response.content
                 
                 print(f"  子图查询成功!")
-                print(f"  合同ID: {subgraph_data['contract_id']}")
-                print(f"  网络ID: {subgraph_data['network_id']}")
-                print(f"  节点数: {subgraph_data['node_count']}")
-                print(f"  边数: {subgraph_data['edge_count']}")
-                print(f"  公司数: {subgraph_data['company_count']}")
-                print(f"  关联合同数: {len(subgraph_data['contract_ids'])}")
-                print(f"  HTML URL: {subgraph_data['html_url']}")
+                print(f"  返回类型: {content_type}")
+                print(f"  HTML 内容大小: {len(html_content)} bytes")
                 
-                # 统计节点类型
-                if subgraph_data["nodes"]:
-                    node_types = {}
-                    for node in subgraph_data["nodes"]:
-                        node_type = node["type"]
-                        node_types[node_type] = node_types.get(node_type, 0) + 1
-                    print(f"\n  节点类型分布: {node_types}")
-                
-                # 统计边类型
-                if subgraph_data["edges"]:
-                    edge_types = {}
-                    for edge in subgraph_data["edges"]:
-                        edge_type = edge["type"]
-                        edge_types[edge_type] = edge_types.get(edge_type, 0) + 1
-                    print(f"  边类型分布: {edge_types}")
-                
-                assert subgraph_data["success"] is True
+                assert "text/html" in content_type
+                assert len(html_content) > 0
             elif subgraph_response.status_code == 404:
                 print(f"  子图查询未找到相关网络: {subgraph_response.json()}")
             else:
@@ -425,8 +408,9 @@ class TestCollusionWorkflow:
             
             if subgraph_response.status_code == 200:
                 success_count += 1
-                subgraph_data = subgraph_response.json()
-                print(f"  [{i+1}] {contract_id}: 成功 - 网络{subgraph_data['network_id']}, {subgraph_data['company_count']}家公司")
+                # 子图接口现在直接返回 HTML 文件
+                html_size = len(subgraph_response.content)
+                print(f"  [{i+1}] {contract_id}: 成功 - HTML 大小 {html_size} bytes")
             else:
                 fail_count += 1
                 print(f"  [{i+1}] {contract_id}: 未找到相关网络")
@@ -442,8 +426,8 @@ class TestCollusionHTMLView:
         response = client.get("/api/collusion/view/nonexistent_file.html")
         assert response.status_code == 404
 
-    def test_view_after_subgraph_generation(self):
-        """测试生成子图后访问 HTML 文件"""
+    def test_subgraph_returns_html_directly(self):
+        """测试子图接口直接返回 HTML 文件"""
         # 先获取串通网络
         collusion_request = {
             "orgs": None,
@@ -466,7 +450,7 @@ class TestCollusionHTMLView:
         if not contract_ids:
             pytest.skip("没有返回风险合同")
         
-        # 生成子图
+        # 调用子图接口，现在直接返回 HTML
         subgraph_request = {
             "contract_id": contract_ids[0],
             "min_cluster_size": 2,
@@ -476,13 +460,12 @@ class TestCollusionHTMLView:
         subgraph_response = client.post("/api/collusion/subgraph", json=subgraph_request)
         
         if subgraph_response.status_code == 200:
-            subgraph_data = subgraph_response.json()
-            html_url = subgraph_data["html_url"]
-            
-            # 访问生成的 HTML 文件
-            html_response = client.get(html_url)
-            assert html_response.status_code == 200
-            assert "text/html" in html_response.headers.get("content-type", "")
+            # 验证直接返回的是 HTML 内容
+            assert "text/html" in subgraph_response.headers.get("content-type", "")
+            assert len(subgraph_response.content) > 0
+            # 验证 HTML 包含基本结构
+            html_content = subgraph_response.text
+            assert "<html" in html_content.lower() or "<!doctype" in html_content.lower()
 
 
 if __name__ == "__main__":

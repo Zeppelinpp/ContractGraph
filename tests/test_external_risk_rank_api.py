@@ -189,11 +189,13 @@ class TestExternalRiskRankAPI:
 
 
 class TestExternalRiskRankSubGraphAPI:
-    """External Risk Rank SubGraph API 测试类"""
+    """External Risk Rank SubGraph API 测试类
+    
+    注意：子图接口现在直接返回 HTML 文件，而不是 JSON 响应
+    """
 
     def test_subgraph_post_endpoint(self):
-        """测试 POST 方式获取子图"""
-        # 假设存在一个合同ID
+        """测试 POST 方式获取子图 - 返回 HTML 文件"""
         request_data = {
             "contract_id": "CON_001",
             "max_depth": 2,
@@ -206,22 +208,22 @@ class TestExternalRiskRankSubGraphAPI:
         assert response.status_code in [200, 404, 500]
         
         if response.status_code == 200:
-            data = response.json()
-            assert data["success"] is True
-            assert "contract_id" in data
-            assert "html_url" in data
-            assert "nodes" in data
-            assert "edges" in data
-            assert "contract_ids" in data
+            # 验证返回的是 HTML 内容
+            assert "text/html" in response.headers.get("content-type", "")
+            # 验证 HTML 内容不为空
+            assert len(response.content) > 0
 
     def test_subgraph_get_endpoint(self):
-        """测试 GET 方式获取子图"""
+        """测试 GET 方式获取子图 - 返回 HTML 文件"""
         response = client.get(
             "/api/external-risk-rank/subgraph/CON_001",
             params={"max_depth": 2, "risk_type": "all"}
         )
 
         assert response.status_code in [200, 404, 500]
+        
+        if response.status_code == 200:
+            assert "text/html" in response.headers.get("content-type", "")
 
     def test_subgraph_different_depths(self):
         """测试不同递归深度"""
@@ -295,7 +297,7 @@ class TestExternalRiskRankWorkflow:
             
             subgraph_request = {
                 "contract_id": selected_contract_id,
-                "max_depth": 5,
+                "max_depth": 2,
                 "risk_type": "all"
             }
 
@@ -305,33 +307,18 @@ class TestExternalRiskRankWorkflow:
             )
             
             if subgraph_response.status_code == 200:
-                subgraph_data = subgraph_response.json()
+                # 子图接口现在直接返回 HTML 文件
+                content_type = subgraph_response.headers.get("content-type", "")
+                html_content = subgraph_response.content
                 
                 print(f"  子图查询成功!")
-                print(f"  合同ID: {subgraph_data['contract_id']}")
-                print(f"  递归深度: {subgraph_data['max_depth']}")
-                print(f"  节点数: {subgraph_data['node_count']}")
-                print(f"  边数: {subgraph_data['edge_count']}")
-                print(f"  公司数: {subgraph_data['company_count']}")
-                print(f"  风险事件数: {subgraph_data['risk_event_count']}")
-                print(f"  关联合同数: {len(subgraph_data['contract_ids'])}")
-                print(f"  HTML URL: {subgraph_data['html_url']}")
+                print(f"  返回类型: {content_type}")
+                print(f"  HTML 内容大小: {len(html_content)} bytes")
                 
-                # 统计节点类型
-                node_types = {}
-                for node in subgraph_data["nodes"]:
-                    node_type = node["type"]
-                    node_types[node_type] = node_types.get(node_type, 0) + 1
-                print(f"\n  节点类型分布: {node_types}")
-                
-                # 统计边类型
-                edge_types = {}
-                for edge in subgraph_data["edges"]:
-                    edge_type = edge["type"]
-                    edge_types[edge_type] = edge_types.get(edge_type, 0) + 1
-                print(f"  边类型分布: {edge_types}")
-                
-                assert subgraph_data["success"] is True
+                assert "text/html" in content_type
+                assert len(html_content) > 0
+            elif subgraph_response.status_code == 404:
+                print(f"  子图查询未找到相关数据: {subgraph_response.json()}")
             else:
                 print(f"  子图查询失败: {subgraph_response.status_code}")
                 print(f"  错误信息: {subgraph_response.json()}")

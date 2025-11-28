@@ -1,7 +1,7 @@
 from typing import List, Union, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from src.config.models import FraudRankConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig
 
 
 # ============================================================================
@@ -185,3 +185,64 @@ class CircularTradeSubGraphResponse(BaseModel):
     node_count: int
     edge_count: int
     contract_ids: List[str]
+
+
+# ============================================================================
+# 履约关联风险检测相关模型
+# ============================================================================
+
+
+class PerformRiskParams(PerformRiskConfig):
+    """履约风险检测算法参数（继承自 PerformRiskConfig，新增API专用字段）"""
+
+    type: str = Field(default="perform_risk", description="场景类型")
+    top_n: int = Field(default=50, description="返回 top N 结果")
+    current_date: Optional[str] = Field(
+        default=None, description="当前日期，格式：YYYY-MM-DD，默认为今天"
+    )
+
+
+class PerformRiskRequest(BaseRequest):
+    """履约风险检测请求"""
+
+    params: Optional[PerformRiskParams] = Field(
+        default=None, description="履约风险检测算法参数"
+    )
+
+
+class PerformRiskCompanyItem(BaseModel):
+    """履约风险公司项"""
+
+    company_id: str
+    company_name: str
+    risk_score: float
+    overdue_count: int
+    risk_contract_count: int
+    legal_person: str
+    credit_code: str
+    risk_contracts: List[str] = Field(default=[], description="风险合同列表")
+
+
+class PerformRiskSubGraphRequest(BaseModel):
+    """履约风险子图请求"""
+
+    contract_id: str = Field(..., description="风险合同ID（Nebula Graph 节点ID）")
+    current_date: Optional[str] = Field(
+        default=None, description="当前日期，格式：YYYY-MM-DD，默认为今天"
+    )
+
+
+class PerformRiskSubGraphResponse(BaseModel):
+    """履约风险子图响应"""
+
+    success: bool
+    contract_id: str
+    html_url: Optional[str]
+    node_count: int
+    edge_count: int
+    overdue_transaction_count: int
+    related_contract_count: int
+    company_count: int
+    contract_ids: List[str] = Field(default=[], description="关联的逾期合同ID列表")
+    nodes: List[SubGraphNode] = Field(default=[], description="子图节点")
+    edges: List[SubGraphEdge] = Field(default=[], description="子图边")

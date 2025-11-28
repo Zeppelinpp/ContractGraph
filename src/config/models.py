@@ -107,3 +107,71 @@ class FraudRankConfig(BaseModel):
             }
         }
 
+
+class PerformRiskConfig(BaseModel):
+    """
+    履约关联风险检测的参数配置模型
+    """
+    
+    # 逾期天数阈值（用于风险评分）
+    overdue_days_max: int = Field(
+        default=30,
+        description="逾期天数归一化上限，超过此天数视为最高严重程度"
+    )
+    
+    # 严重程度指数
+    severity_power: float = Field(
+        default=0.7,
+        description="逾期天数严重程度计算的指数，用于强调更长的逾期时间"
+    )
+    
+    # 基础权重
+    overdue_base_weight: float = Field(
+        default=0.15,
+        description="每笔逾期交易的基础风险权重"
+    )
+    
+    # 严重程度乘数上限
+    severity_multiplier_max: float = Field(
+        default=0.5,
+        description="严重程度对基础权重的最大额外乘数"
+    )
+    
+    # 逾期分数上限
+    overdue_score_cap: float = Field(
+        default=0.5,
+        description="逾期交易部分的最大风险分数贡献"
+    )
+    
+    # 风险合同权重
+    risk_contract_weight: float = Field(
+        default=0.3,
+        description="风险合同比例对总分的权重"
+    )
+    
+    # 金额归一化阈值
+    amount_threshold: float = Field(
+        default=10000000.0,
+        description="金额归一化的上限金额（默认1000万）"
+    )
+    
+    # 金额权重
+    amount_weight: float = Field(
+        default=0.2,
+        description="金额部分对总分的权重"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "overdue_days_max": 365,
+                "severity_power": 0.7,
+                "overdue_base_weight": 0.15,
+                "severity_multiplier_max": 0.5,
+                "overdue_score_cap": 0.5,
+                "risk_contract_weight": 0.3,
+                "amount_threshold": 10000000.0,
+                "amount_weight": 0.2,
+            }
+        }
+

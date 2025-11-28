@@ -25,6 +25,10 @@ from src.analysis.circular_trade import (
     detect_fan_out_fan_in,
     detect_circular_trade_by_contract,
 )
+from src.analysis.perform_risk import (
+    analyze_perform_risk,
+    get_perform_risk_subgraph,
+)
 from src.server.models import (
     FraudRankRequest,
     FraudRankParams,
@@ -40,8 +44,13 @@ from src.server.models import (
     CircularTradePattern,
     CircularTradeSubGraphRequest,
     CircularTradeSubGraphResponse,
+    PerformRiskRequest,
+    PerformRiskParams,
+    PerformRiskCompanyItem,
+    PerformRiskSubGraphRequest,
+    PerformRiskSubGraphResponse,
 )
-from src.config.models import FraudRankConfig
+from src.config.models import FraudRankConfig, PerformRiskConfig
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
@@ -400,6 +409,196 @@ async def view_circular_trade_html(filename: str):
 
 
 # ============================================================================
+# 履约关联风险检测 API
+# ============================================================================
+
+
+@app.post("/api/perform-risk", response_model=BaseResponse)
+async def perform_risk_analysis(request: PerformRiskRequest):
+    """
+    履约关联风险检测
+
+    根据相对方获取签署履约状态的合同存在收款逾期或交货逾期的，
+    排查并列出同一相对方或存在相关关系的相对方的相同标的名称的其他合同。
+    返回公司风险排名和风险合同ID列表（按风险分数倒序）。
+    """
+    session = None
+    start_time = time.time()
+    try:
+        session = get_nebula_session()
+
+        params = request.params or PerformRiskParams()
+        config = PerformRiskConfig(
+            overdue_days_max=params.overdue_days_max,
+            severity_power=params.severity_power,
+            overdue_base_weight=params.overdue_base_weight,
+            severity_multiplier_max=params.severity_multiplier_max,
+            overdue_score_cap=params.overdue_score_cap,
+            risk_contract_weight=params.risk_contract_weight,
+            amount_threshold=params.amount_threshold,
+            amount_weight=params.amount_weight,
+        )
+
+        # Parse current_date
+        current_date = datetime.now()
+        if params.current_date:
+            try:
+                current_date = datetime.strptime(params.current_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="日期格式不正确，请使用 YYYY-MM-DD 格式"
+                )
+
+        result = analyze_perform_risk(
+            session=session,
+            current_date=current_date,
+            top_n=params.top_n,
+            company_ids=request.orgs,
+            periods=request.period,
+            config=config,
+        )
+
+        report_df = result.get("report")
+        risk_contract_ids = result.get("risk_contract_ids", [])
+
+        # Build company report
+        company_report = []
+        if report_df is not None and len(report_df) > 0:
+            for _, row in report_df.iterrows():
+                company_report.append(
+                    PerformRiskCompanyItem(
+                        company_id=str(row.get("公司ID", "")),
+                        company_name=str(row.get("公司名称", "")),
+                        risk_score=float(row.get("风险分数", 0)),
+                        overdue_count=int(row.get("逾期交易数", 0)),
+                        risk_contract_count=int(row.get("风险合同数", 0)),
+                        legal_person=str(row.get("法人代表", "")),
+                        credit_code=str(row.get("信用代码", "")),
+                        risk_contracts=str(row.get("风险合同列表", "")).split("; ") if row.get("风险合同列表") else [],
+                    )
+                )
+
+        return BaseResponse(
+            type="perform_risk",
+            count=len(risk_contract_ids),
+            contract_ids=risk_contract_ids,
+            details={
+                "company_list": [c.model_dump() for c in company_report],
+                "metadata": {
+                    "company_count": len(company_report),
+                    "contract_count": len(risk_contract_ids),
+                    "overdue_transaction_count": len(result.get("overdue_transactions", [])),
+                    "current_date": current_date.strftime("%Y-%m-%d"),
+                    "timestamp": datetime.now().isoformat(),
+                    "execution_time": round(time.time() - start_time, 2),
+                },
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.post("/api/perform-risk/subgraph", response_model=PerformRiskSubGraphResponse)
+async def get_perform_risk_subgraph_api(request: PerformRiskSubGraphRequest):
+    """
+    获取履约风险子图
+
+    以风险合同ID为入口，查找合同的相关方，
+    获取这些相关方的逾期交易以及涉及的合同，生成交互式HTML页面。
+    返回的 html_url 可直接嵌入前端 iframe 中。
+    """
+    session = None
+    try:
+        session = get_nebula_session()
+
+        # Parse current_date
+        current_date = datetime.now()
+        if request.current_date:
+            try:
+                current_date = datetime.strptime(request.current_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="日期格式不正确，请使用 YYYY-MM-DD 格式"
+                )
+
+        result = get_perform_risk_subgraph(
+            session=session,
+            contract_id=request.contract_id,
+            current_date=current_date,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", "未找到相关数据")
+            )
+
+        html_url = None
+        if result.get("html_url"):
+            html_filename = os.path.basename(result["html_url"])
+            html_url = f"/api/perform-risk/view/{html_filename}"
+
+        return PerformRiskSubGraphResponse(
+            success=True,
+            contract_id=request.contract_id,
+            html_url=html_url,
+            node_count=len(result.get("nodes", [])),
+            edge_count=len(result.get("edges", [])),
+            overdue_transaction_count=result.get("overdue_transaction_count", 0),
+            related_contract_count=result.get("related_contract_count", 0),
+            company_count=result.get("company_count", 0),
+            contract_ids=result.get("contract_ids", []),
+            nodes=[SubGraphNode(**n) for n in result.get("nodes", [])],
+            edges=[SubGraphEdge(**e) for e in result.get("edges", [])],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if session:
+            session.release()
+
+
+@app.get("/api/perform-risk/subgraph/{contract_id}")
+async def get_perform_risk_subgraph_by_id(
+    contract_id: str,
+    current_date: str = Query(default=None, description="当前日期，格式：YYYY-MM-DD"),
+):
+    """
+    GET 方式获取履约风险子图（便于前端直接调用）
+    """
+    request = PerformRiskSubGraphRequest(
+        contract_id=contract_id,
+        current_date=current_date,
+    )
+    return await get_perform_risk_subgraph_api(request)
+
+
+@app.get("/api/perform-risk/view/{filename}")
+async def view_perform_risk_html(filename: str):
+    """
+    提供履约风险子图 HTML 文件访问
+
+    前端可通过 iframe 嵌入此 URL 展示交互式图谱
+    """
+    file_path = os.path.join(REPORTS_DIR, filename)
+
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="text/html")
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
+
+
+# ============================================================================
 # 健康检查
 # ============================================================================
 
@@ -424,6 +623,10 @@ async def root():
             "contract_subgraph": "POST /api/contract-risk/subgraph",
             "contract_subgraph_get": "GET /api/contract-risk/subgraph/{contract_id}",
             "contract_view": "GET /api/contract-risk/view/{filename}",
+            "perform_risk": "POST /api/perform-risk",
+            "perform_risk_subgraph": "POST /api/perform-risk/subgraph",
+            "perform_risk_subgraph_get": "GET /api/perform-risk/subgraph/{contract_id}",
+            "perform_risk_view": "GET /api/perform-risk/view/{filename}",
         },
     }
 

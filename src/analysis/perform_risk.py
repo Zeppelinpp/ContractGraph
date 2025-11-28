@@ -7,14 +7,18 @@
 """
 
 import os
+import json
 from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional
 import pandas as pd
 from src.utils.nebula_utils import get_nebula_session, execute_query
+from src.config.models import PerformRiskConfig
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "../..")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+
+DEFAULT_CONFIG = PerformRiskConfig()
 
 
 def parse_date(date_str: str) -> datetime:
@@ -359,13 +363,27 @@ def find_risk_contracts(session, overdue_transactions: List[Dict], current_date:
     return risk_contracts_by_company
 
 
-def calculate_risk_score(company_id: str, risk_contracts: List[Dict], overdue_transactions: List[Dict]) -> float:
+def calculate_risk_score(
+    company_id: str,
+    risk_contracts: List[Dict],
+    overdue_transactions: List[Dict],
+    config: PerformRiskConfig = None,
+) -> float:
     """
     Calculate risk score for a company based on overdue transactions and risk contracts
+    
+    Args:
+        company_id: Company ID
+        risk_contracts: List of risk contracts
+        overdue_transactions: List of overdue transactions
+        config: Configuration parameters
     
     Returns:
         Risk score (0-1)
     """
+    if config is None:
+        config = DEFAULT_CONFIG
+    
     score = 0.0
     
     # Get overdue transactions for this company
@@ -377,21 +395,12 @@ def calculate_risk_score(company_id: str, risk_contracts: List[Dict], overdue_tr
     
     # Base score from overdue count with severity consideration
     if company_overdue_count > 0:
-        # Calculate overdue severity based on maximum overdue days
-        # Using max instead of avg to reflect the most severe case
         overdue_days_list = [txn.get("overdue_days", 0) for txn in company_overdue_txns]
         if overdue_days_list:
             max_overdue_days = max(overdue_days_list)
-            # Normalize overdue days severity (365 days as max, beyond that treated as 1.0)
-            # Use power function (0.7) to emphasize longer overdue periods
-            # e.g., 30 days -> 0.19, 90 days -> 0.40, 180 days -> 0.64, 365 days -> 1.0
-            severity_factor = min(1.0, (max_overdue_days / 365.0) ** 0.7)
-            # Base score: count * base_weight * (1 + severity_factor * 0.5)
-            # Severity multiplier ranges from 1.0 (no severity) to 1.5 (max severity)
-            # This means longer overdue periods get higher weight
-            base_weight = 0.15
-            severity_multiplier = 1.0 + severity_factor * 0.5
-            score += min(company_overdue_count * base_weight * severity_multiplier, 0.5)
+            severity_factor = min(1.0, (max_overdue_days / config.overdue_days_max) ** config.severity_power)
+            severity_multiplier = 1.0 + severity_factor * config.severity_multiplier_max
+            score += min(company_overdue_count * config.overdue_base_weight * severity_multiplier, config.overdue_score_cap)
     
     # Count risk contracts (contracts with same subject from same/related counterparties)
     total_risk_contracts = len(risk_contracts)
@@ -400,13 +409,12 @@ def calculate_risk_score(company_id: str, risk_contracts: List[Dict], overdue_tr
     # Add score based on risk contracts
     if total_risk_contracts > 0:
         risk_ratio = contracts_with_overdue / total_risk_contracts
-        score += risk_ratio * 0.3
+        score += risk_ratio * config.risk_contract_weight
     
     # Add score based on total amount of risk contracts
     total_amount = sum(float(c.get("amount", 0) or 0) for c in risk_contracts)
     if total_amount > 0:
-        # Normalize amount (assume 10M as max)
-        amount_score = min(total_amount / 10000000, 1.0) * 0.2
+        amount_score = min(total_amount / config.amount_threshold, 1.0) * config.amount_weight
         score += amount_score
     
     return min(score, 1.0)
@@ -418,6 +426,7 @@ def analyze_perform_risk(
     top_n: int = 10,
     company_ids: Optional[List[str]] = None,
     periods: Optional[List[str]] = None,
+    config: PerformRiskConfig = None,
 ):
     """
     Main analysis function
@@ -428,10 +437,14 @@ def analyze_perform_risk(
         top_n: Number of top risk companies to return
         company_ids: 公司ID列表（按Company.number过滤）
         periods: 时间段列表（单值或[start, end]范围）
+        config: 算法配置参数
     
     Returns:
-        DataFrame with top N risk companies
+        Dict with report DataFrame and risk contract IDs
     """
+    if config is None:
+        config = DEFAULT_CONFIG
+    
     print(f"\n[1/4] 查找逾期交易...")
     overdue_transactions = find_overdue_transactions(
         session,
@@ -443,7 +456,12 @@ def analyze_perform_risk(
     
     if not overdue_transactions:
         print("\n未发现逾期交易")
-        return pd.DataFrame()
+        return {
+            "report": pd.DataFrame(),
+            "risk_contract_ids": [],
+            "overdue_transactions": [],
+            "risk_contracts_by_company": {},
+        }
     
     print(f"\n[2/4] 查找关联相对方...")
     risk_contracts_by_company = find_risk_contracts(session, overdue_transactions, current_date)
@@ -479,7 +497,7 @@ def analyze_perform_risk(
     # Calculate scores
     for company_id, risk_contracts in risk_contracts_by_company.items():
         if company_id in company_info:
-            score = calculate_risk_score(company_id, risk_contracts, overdue_transactions)
+            score = calculate_risk_score(company_id, risk_contracts, overdue_transactions, config)
             company_scores[company_id] = {
                 "score": score,
                 "risk_contracts": risk_contracts,
@@ -497,6 +515,14 @@ def analyze_perform_risk(
         key=lambda x: x[1]["score"],
         reverse=True
     )[:top_n]
+    
+    # Collect all risk contract IDs
+    all_risk_contract_ids = set()
+    for company_id, data in company_scores.items():
+        for contract in data["risk_contracts"]:
+            contract_id = contract.get("contract_id", "")
+            if contract_id:
+                all_risk_contract_ids.add(contract_id)
     
     # Build report
     report = []
@@ -525,13 +551,574 @@ def analyze_perform_risk(
     output_file = os.path.join(REPORTS_DIR, "perform_risk_report.csv")
     df_report.to_csv(output_file, index=False, encoding="utf-8-sig")
     
-    return df_report
+    return {
+        "report": df_report,
+        "risk_contract_ids": list(all_risk_contract_ids),
+        "overdue_transactions": overdue_transactions,
+        "risk_contracts_by_company": risk_contracts_by_company,
+    }
+
+
+def get_perform_risk_subgraph(
+    session,
+    contract_id: str,
+    current_date: datetime = None,
+) -> Dict:
+    """
+    获取履约风险子图
+    
+    传入risk contract id -> 找到这个合同id的相关方 -> 
+    这些相关方有哪些逾期交易以及这些逾期交易涉及哪些合同
+    
+    Args:
+        session: Nebula session
+        contract_id: 风险合同ID
+        current_date: 当前日期，默认为今天
+    
+    Returns:
+        Dict with subgraph data and HTML path
+    """
+    if current_date is None:
+        current_date = datetime.now()
+    
+    # Step 1: Find parties of the contract
+    party_query = f"""
+    MATCH (comp:Company)-[:PARTY_A|PARTY_B]->(c:Contract)
+    WHERE id(c) == '{contract_id}'
+    RETURN DISTINCT id(comp) as company_id,
+           properties(comp) as comp_props,
+           id(c) as contract_id,
+           properties(c) as c_props
+    """
+    party_results = execute_query(session, party_query)
+    
+    if not party_results:
+        return {
+            "success": False,
+            "message": f"未找到合同 {contract_id} 的相关方",
+            "nodes": [],
+            "edges": [],
+            "html_url": None,
+        }
+    
+    # Collect company info and contract info
+    companies = {}
+    contract_info = None
+    for row in party_results:
+        company_id = row.get("company_id", "")
+        comp_props = row.get("comp_props", {})
+        c_props = row.get("c_props", {})
+        
+        if company_id and isinstance(comp_props, dict):
+            companies[company_id] = {
+                "name": comp_props.get("name", ""),
+                "credit_code": comp_props.get("credit_code", ""),
+            }
+        
+        if contract_info is None and isinstance(c_props, dict):
+            contract_info = {
+                "contract_id": row.get("contract_id", ""),
+                "contract_no": c_props.get("contract_no", ""),
+                "contract_name": c_props.get("contract_name", ""),
+                "amount": c_props.get("amount", 0),
+            }
+    
+    company_ids = list(companies.keys())
+    
+    # Step 2: Find overdue transactions for these companies
+    overdue_transactions = find_overdue_transactions(session, current_date, company_ids=None, periods=None)
+    
+    # Filter to transactions related to these companies
+    related_overdue_txns = [
+        txn for txn in overdue_transactions
+        if txn.get("company_id") in company_ids
+    ]
+    
+    # Step 3: Collect all contracts from overdue transactions
+    overdue_contracts = {}
+    for txn in related_overdue_txns:
+        c_id = txn.get("contract_id", "")
+        if c_id and c_id not in overdue_contracts:
+            overdue_contracts[c_id] = {
+                "contract_id": c_id,
+                "contract_no": txn.get("contract_no", ""),
+                "contract_name": txn.get("contract_name", ""),
+            }
+    
+    # Step 4: Build subgraph nodes and edges
+    nodes = []
+    edges = []
+    node_ids = set()
+    
+    # Add the input contract node
+    if contract_info:
+        nodes.append({
+            "id": contract_info["contract_id"],
+            "type": "Contract",
+            "label": contract_info.get("contract_name", contract_info["contract_id"])[:20],
+            "properties": {
+                "contract_no": contract_info.get("contract_no", ""),
+                "contract_name": contract_info.get("contract_name", ""),
+                "amount": contract_info.get("amount", 0),
+                "is_input": True,
+            },
+        })
+        node_ids.add(contract_info["contract_id"])
+    
+    # Add company nodes
+    for company_id, info in companies.items():
+        if company_id not in node_ids:
+            nodes.append({
+                "id": company_id,
+                "type": "Company",
+                "label": info.get("name", company_id)[:20],
+                "properties": {
+                    "name": info.get("name", ""),
+                    "credit_code": info.get("credit_code", ""),
+                },
+            })
+            node_ids.add(company_id)
+        
+        # Add edge from company to input contract
+        if contract_info:
+            edges.append({
+                "source": company_id,
+                "target": contract_info["contract_id"],
+                "type": "PARTY",
+                "properties": {},
+            })
+    
+    # Add overdue contract nodes
+    for c_id, c_info in overdue_contracts.items():
+        if c_id not in node_ids:
+            nodes.append({
+                "id": c_id,
+                "type": "Contract",
+                "label": c_info.get("contract_name", c_id)[:20],
+                "properties": {
+                    "contract_no": c_info.get("contract_no", ""),
+                    "contract_name": c_info.get("contract_name", ""),
+                    "has_overdue": True,
+                },
+            })
+            node_ids.add(c_id)
+    
+    # Add transaction nodes and edges
+    for txn in related_overdue_txns:
+        txn_id = txn.get("transaction_id", "")
+        company_id = txn.get("company_id", "")
+        c_id = txn.get("contract_id", "")
+        
+        if txn_id and txn_id not in node_ids:
+            nodes.append({
+                "id": txn_id,
+                "type": "Transaction",
+                "label": f"逾期{txn.get('overdue_days', 0)}天",
+                "properties": {
+                    "transaction_no": txn.get("transaction_no", ""),
+                    "overdue_type": txn.get("overdue_type", ""),
+                    "overdue_days": txn.get("overdue_days", 0),
+                    "amount": txn.get("amount", 0),
+                    "fpaidamount": txn.get("fpaidamount", 0),
+                },
+            })
+            node_ids.add(txn_id)
+        
+        # Add edge from transaction to company
+        if txn_id and company_id:
+            edges.append({
+                "source": txn_id,
+                "target": company_id,
+                "type": "OVERDUE_FOR",
+                "properties": {
+                    "overdue_type": txn.get("overdue_type", ""),
+                },
+            })
+        
+        # Add edge from transaction to contract
+        if txn_id and c_id:
+            edges.append({
+                "source": txn_id,
+                "target": c_id,
+                "type": "BELONGS_TO",
+                "properties": {},
+            })
+    
+    # Step 5: Generate HTML visualization
+    html_path = generate_perform_risk_subgraph_html(
+        contract_id=contract_id,
+        nodes=nodes,
+        edges=edges,
+        contract_info=contract_info,
+        companies=companies,
+        overdue_transactions=related_overdue_txns,
+    )
+    
+    return {
+        "success": True,
+        "contract_id": contract_id,
+        "nodes": nodes,
+        "edges": edges,
+        "html_url": html_path,
+        "overdue_transaction_count": len(related_overdue_txns),
+        "related_contract_count": len(overdue_contracts),
+        "company_count": len(companies),
+        "contract_ids": list(overdue_contracts.keys()),
+    }
+
+
+def generate_perform_risk_subgraph_html(
+    contract_id: str,
+    nodes: List[Dict],
+    edges: List[Dict],
+    contract_info: Dict,
+    companies: Dict,
+    overdue_transactions: List[Dict],
+) -> str:
+    """
+    生成履约风险子图的交互式HTML页面
+    """
+    safe_id = contract_id.replace('"', '').replace("'", "")
+    output_filename = f"perform_risk_subgraph_{safe_id}.html"
+    
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    output_path = os.path.join(REPORTS_DIR, output_filename)
+    
+    nodes_json = json.dumps(nodes, ensure_ascii=False)
+    edges_json = json.dumps(edges, ensure_ascii=False)
+    
+    html_content = f'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>履约风险子图 - {contract_id}</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }}
+        .container {{
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        header {{
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 20px;
+        }}
+        header h1 {{
+            font-size: 1.8rem;
+            color: #00d9ff;
+            margin-bottom: 8px;
+        }}
+        header p {{
+            color: #888;
+            font-size: 0.9rem;
+        }}
+        .stats-bar {{
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }}
+        .stat-item {{
+            text-align: center;
+        }}
+        .stat-value {{
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #00ff88;
+        }}
+        .stat-label {{
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 4px;
+        }}
+        .main-content {{
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 220px);
+        }}
+        .sidebar {{
+            width: 280px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 15px;
+            overflow-y: auto;
+        }}
+        .legend {{
+            margin-bottom: 20px;
+        }}
+        .legend h3 {{
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            color: #00d9ff;
+        }}
+        .legend-item {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 0;
+            font-size: 0.85rem;
+        }}
+        .legend-dot {{
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }}
+        .graph-panel {{
+            flex: 1;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }}
+        #graph-svg {{
+            width: 100%;
+            height: 100%;
+        }}
+        .node {{
+            cursor: pointer;
+        }}
+        .node circle {{
+            stroke: #fff;
+            stroke-width: 2px;
+        }}
+        .node text {{
+            font-size: 10px;
+            fill: #fff;
+            text-anchor: middle;
+            pointer-events: none;
+        }}
+        .link {{
+            stroke: #666;
+            stroke-opacity: 0.6;
+        }}
+        .link-label {{
+            font-size: 9px;
+            fill: #888;
+        }}
+        .tooltip {{
+            position: absolute;
+            background: rgba(0,0,0,0.9);
+            border: 1px solid #00d9ff;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 300px;
+        }}
+        .tooltip-key {{
+            color: #00d9ff;
+            margin-right: 5px;
+        }}
+        .tooltip-value {{
+            color: #fff;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📋 履约风险关联子图</h1>
+            <p>合同相关方逾期交易分析</p>
+        </header>
+        
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-value" id="node-count">{len(nodes)}</div>
+                <div class="stat-label">节点数量</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="edge-count">{len(edges)}</div>
+                <div class="stat-label">关系数量</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="txn-count">{len(overdue_transactions)}</div>
+                <div class="stat-label">逾期交易</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="company-count">{len(companies)}</div>
+                <div class="stat-label">相关公司</div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="legend">
+                    <h3>图例说明</h3>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: #00ff88;"></div>
+                        <span>合同 (Contract)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: #a855f7;"></div>
+                        <span>公司 (Company)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: #ff6b6b;"></div>
+                        <span>逾期交易 (Transaction)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="graph-panel">
+                <svg id="graph-svg"></svg>
+            </div>
+        </div>
+    </div>
+    
+    <div class="tooltip" id="tooltip" style="display: none;"></div>
+
+    <script>
+        const graphData = {{
+            nodes: {nodes_json},
+            edges: {edges_json}
+        }};
+        
+        const colorMap = {{
+            'Contract': '#00ff88',
+            'Company': '#a855f7',
+            'Transaction': '#ff6b6b'
+        }};
+        
+        const svg = d3.select('#graph-svg');
+        const container = svg.node().parentElement;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        
+        svg.attr('viewBox', [0, 0, width, height]);
+        
+        const g = svg.append('g');
+        
+        // Zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => g.attr('transform', event.transform));
+        svg.call(zoom);
+        
+        // Build node map
+        const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
+        
+        // Create links
+        const links = graphData.edges.map(e => ({{
+            source: e.source,
+            target: e.target,
+            type: e.type,
+            properties: e.properties
+        }}));
+        
+        // Force simulation
+        const simulation = d3.forceSimulation(graphData.nodes)
+            .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+            .force('charge', d3.forceManyBody().strength(-300))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(40));
+        
+        // Draw links
+        const link = g.append('g')
+            .selectAll('line')
+            .data(links)
+            .join('line')
+            .attr('class', 'link')
+            .attr('stroke-width', 1.5);
+        
+        // Draw nodes
+        const node = g.append('g')
+            .selectAll('g')
+            .data(graphData.nodes)
+            .join('g')
+            .attr('class', 'node')
+            .call(d3.drag()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended));
+        
+        node.append('circle')
+            .attr('r', d => d.type === 'Transaction' ? 15 : 20)
+            .attr('fill', d => colorMap[d.type] || '#888');
+        
+        node.append('text')
+            .attr('dy', 4)
+            .text(d => d.label || d.id.substring(0, 8));
+        
+        // Tooltip
+        const tooltip = d3.select('#tooltip');
+        
+        node.on('mouseover', (event, d) => {{
+            let html = `<div><span class="tooltip-key">ID:</span><span class="tooltip-value">${{d.id}}</span></div>`;
+            html += `<div><span class="tooltip-key">类型:</span><span class="tooltip-value">${{d.type}}</span></div>`;
+            if (d.properties) {{
+                for (const [key, value] of Object.entries(d.properties)) {{
+                    if (value !== null && value !== undefined && value !== '') {{
+                        html += `<div><span class="tooltip-key">${{key}}:</span><span class="tooltip-value">${{value}}</span></div>`;
+                    }}
+                }}
+            }}
+            tooltip.html(html)
+                .style('display', 'block')
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px');
+        }})
+        .on('mouseout', () => tooltip.style('display', 'none'));
+        
+        simulation.on('tick', () => {{
+            link
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y);
+            
+            node.attr('transform', d => `translate(${{d.x}},${{d.y}})`);
+        }});
+        
+        function dragstarted(event) {{
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            event.subject.fx = event.subject.x;
+            event.subject.fy = event.subject.y;
+        }}
+        
+        function dragged(event) {{
+            event.subject.fx = event.x;
+            event.subject.fy = event.y;
+        }}
+        
+        function dragended(event) {{
+            if (!event.active) simulation.alphaTarget(0);
+            event.subject.fx = null;
+            event.subject.fy = null;
+        }}
+    </script>
+</body>
+</html>
+'''
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    return output_path
 
 
 def main(
     current_date: datetime = None,
     company_ids: Optional[List[str]] = None,
     periods: Optional[List[str]] = None,
+    config: PerformRiskConfig = None,
 ):
     """
     Main function for performance risk analysis
@@ -540,6 +1127,7 @@ def main(
         current_date: Current date for comparison. If None, uses datetime.now()
         company_ids: 公司ID列表（按Company.number过滤）
         periods: 时间段列表（单值或[start, end]范围）
+        config: 算法配置参数
     """
     print("=" * 60)
     print("履约关联风险检测")
@@ -559,22 +1147,25 @@ def main(
     try:
         session = get_nebula_session()
         
-        report = analyze_perform_risk(
+        result = analyze_perform_risk(
             session,
             current_date,
             top_n=10,
             company_ids=company_ids,
             periods=periods,
+            config=config,
         )
         
         print("\n" + "=" * 60)
         print("分析完成！")
         print("=" * 60)
         
+        report = result["report"]
         if len(report) > 0:
             print(f"\n前 10 高风险企业：\n")
             print(report.to_string(index=False))
             print(f"\n完整报告已保存至: reports/perform_risk_report.csv")
+            print(f"\n风险合同数量: {len(result['risk_contract_ids'])}")
         else:
             print("\n未发现高风险企业")
     

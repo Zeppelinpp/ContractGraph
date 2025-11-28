@@ -263,9 +263,153 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 - `edge_count`: 子图边数量
 - `contract_ids`: 涉及的合同ID列表
 
-### 履约关联 & 履约能力 风险分析
-> details结构, 待定
-... 相关的场景的details数据结构定义
+### 履约关联风险分析
+
+场景类型：`perform_risk`
+
+返回结构示例：
+```json
+{
+    "type": "perform_risk",
+    "count": 15,
+    "contract_ids": ["CON_001", "CON_002", "CON_003", ...],
+    "details": {
+        "company_list": [
+            {
+                "company_id": "Company_ORG001",
+                "company_name": "中建华东分公司",
+                "risk_score": 0.72,
+                "overdue_count": 3,
+                "risk_contract_count": 5,
+                "legal_person": "张三",
+                "credit_code": "91310000XXX",
+                "risk_contracts": ["HT-2024-001(采购合同)", "HT-2024-005(建材合同)"]
+            }
+        ],
+        "metadata": {
+            "company_count": 10,
+            "contract_count": 15,
+            "overdue_transaction_count": 25,
+            "current_date": "2024-01-20",
+            "timestamp": "2024-01-20T10:30:00.000000",
+            "execution_time": 1.85
+        }
+    }
+}
+```
+
+字段说明：
+- `company_list`: 公司风险列表，按风险分数倒序排列
+  - `company_id`: 公司ID（Nebula Graph 节点ID）
+  - `company_name`: 公司名称
+  - `risk_score`: 风险分数（0-1，越高风险越大）
+  - `overdue_count`: 逾期交易数量
+  - `risk_contract_count`: 风险合同数量
+  - `legal_person`: 法人代表
+  - `credit_code`: 信用代码
+  - `risk_contracts`: 风险合同列表（合同编号+名称）
+- `metadata`: 分析元数据
+  - `company_count`: 涉及公司数量
+  - `contract_count`: 风险合同数量
+  - `overdue_transaction_count`: 逾期交易总数
+  - `current_date`: 分析基准日期
+  - `timestamp`: 分析时间戳
+  - `execution_time`: 执行耗时（秒）
+
+#### 履约风险子图可视化
+
+接口：`POST /api/perform-risk/subgraph`
+
+以风险合同ID为入口，查找合同的相关方，获取这些相关方的逾期交易以及涉及的合同，生成交互式HTML可视化页面。
+
+**POST 请求参数：**
+```json
+{
+    "contract_id": "Contract_CON_001",
+    "current_date": "2024-01-20"
+}
+```
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `contract_id` | string | 必填 | 风险合同ID（Nebula Graph 节点ID） |
+| `current_date` | string | 今天 | 当前日期，格式：YYYY-MM-DD |
+
+**返回结构示例：**
+```json
+{
+    "success": true,
+    "contract_id": "Contract_CON_001",
+    "html_url": "/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html",
+    "node_count": 12,
+    "edge_count": 18,
+    "overdue_transaction_count": 5,
+    "related_contract_count": 3,
+    "company_count": 2,
+    "contract_ids": ["CON_002", "CON_003", "CON_005"],
+    "nodes": [
+        {
+            "id": "Contract_CON_001",
+            "type": "Contract",
+            "label": "采购合同-华信建材",
+            "properties": {"contract_no": "HT-2024-001", "is_input": true}
+        },
+        {
+            "id": "Company_ORG001",
+            "type": "Company",
+            "label": "中建华东分公司",
+            "properties": {"name": "中建华东分公司", "credit_code": "91310000XXX"}
+        },
+        {
+            "id": "TXN_001",
+            "type": "Transaction",
+            "label": "逾期15天",
+            "properties": {"overdue_type": "收款逾期", "overdue_days": 15, "amount": 500000}
+        }
+    ],
+    "edges": [
+        {
+            "source": "Company_ORG001",
+            "target": "Contract_CON_001",
+            "type": "PARTY",
+            "properties": {}
+        },
+        {
+            "source": "TXN_001",
+            "target": "Company_ORG001",
+            "type": "OVERDUE_FOR",
+            "properties": {"overdue_type": "收款逾期"}
+        }
+    ]
+}
+```
+
+**字段说明：**
+- `success`: 是否成功
+- `contract_id`: 入口合同ID
+- `html_url`: 可视化HTML页面URL（可嵌入iframe）
+- `node_count`: 子图节点数量
+- `edge_count`: 子图边数量
+- `overdue_transaction_count`: 逾期交易数量
+- `related_contract_count`: 关联的逾期合同数量
+- `company_count`: 相关公司数量
+- `contract_ids`: 关联的逾期合同ID列表
+- `nodes`: 节点列表
+  - `id`: 节点ID
+  - `type`: 节点类型（Contract/Company/Transaction）
+  - `label`: 节点标签
+  - `properties`: 节点属性
+- `edges`: 边列表
+  - `source`: 源节点ID
+  - `target`: 目标节点ID
+  - `type`: 边类型（PARTY/OVERDUE_FOR/BELONGS_TO）
+  - `properties`: 边属性
+
+**查看HTML页面：**
+```bash
+# 在浏览器中打开
+open "http://localhost:8000/api/perform-risk/view/perform_risk_subgraph_Contract_CON_001.html"
+```
 
 ## 参数清单
 
@@ -351,5 +495,45 @@ open "http://localhost:8000/api/contract-risk/view/contract_risk_subgraph_Contra
 }
 ```
 
-### 场景3
-...
+### 履约关联风险分析 - 参数配置
+
+场景类型：`perform_risk`
+
+**params 参数说明：**
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `type` | string | `"perform_risk"` | 场景类型标识 |
+| `top_n` | int | `50` | 返回 top N 结果 |
+| `current_date` | string | 今天 | 当前日期，格式：YYYY-MM-DD |
+| `overdue_days_max` | int | `30` | 逾期天数归一化上限 |
+| `severity_power` | number | `0.7` | 逾期天数严重程度计算指数 |
+| `overdue_base_weight` | number | `0.15` | 每笔逾期交易的基础风险权重 |
+| `severity_multiplier_max` | number | `0.5` | 严重程度对基础权重的最大额外乘数 |
+| `overdue_score_cap` | number | `0.5` | 逾期交易部分的最大风险分数贡献 |
+| `risk_contract_weight` | number | `0.3` | 风险合同比例对总分的权重 |
+| `amount_threshold` | number | `10000000.0` | 金额归一化上限（元） |
+| `amount_weight` | number | `0.2` | 金额部分对总分的权重 |
+
+**请求示例（使用默认参数）：**
+```json
+{
+    "orgs": ["org_001", "org_002"],
+    "period": ["2024-01-01", "2024-12-31"],
+    "params": { "type": "perform_risk" }
+}
+```
+
+**请求示例（自定义参数）：**
+```json
+{
+    "orgs": ["org_001"],
+    "period": ["2024-01-01", "2024-06-30"],
+    "params": {
+        "type": "perform_risk",
+        "top_n": 100,
+        "current_date": "2024-06-30",
+        "overdue_days_max": 60,
+        "amount_threshold": 5000000.0
+    }
+}
+```
